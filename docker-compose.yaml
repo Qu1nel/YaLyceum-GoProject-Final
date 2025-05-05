@@ -1,0 +1,50 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: calculator_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-calculator_db}
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - calculator_net
+
+  agent:
+    container_name: calculator_agent
+    build:
+      context: .
+      dockerfile: cmd/agent/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${AGENT_HTTP_PORT:-8080}:8080"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      AGENT_HTTP_PORT: ${AGENT_HTTP_PORT:-8080}
+      POSTGRES_DSN: "postgres://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-calculator_db}?sslmode=disable"
+      JWT_SECRET: ${JWT_SECRET:-your_very_secret_key_change_me}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      # Другие переменные (таймауты, etc.) можно добавить позже
+    networks:
+      - calculator_net
+    # Добавим позже volumes для .env, если решим не передавать все через environment
+
+volumes:
+  postgres_data:
+
+networks:
+  calculator_net:
+    driver: bridge
