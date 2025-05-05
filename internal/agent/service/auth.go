@@ -8,6 +8,7 @@ import (
 
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/repository"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/hasher"
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/jwtauth"
 
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -30,16 +31,23 @@ type AuthService interface {
 }
 
 type authService struct {
-	userRepo repository.UserRepository
-	hasher   hasher.PasswordHasher    
-	log      *zap.Logger              
+	userRepo   repository.UserRepository
+	hasher     hasher.PasswordHasher
+	log        *zap.Logger
+	jwtManager *jwtauth.Manager
 }
 
-func NewAuthService(userRepo repository.UserRepository, hasher hasher.PasswordHasher, log *zap.Logger) AuthService {
+func NewAuthService(
+	userRepo repository.UserRepository,
+	hasher hasher.PasswordHasher,
+	log *zap.Logger,
+	jwtManager *jwtauth.Manager,
+) AuthService {
 	return &authService{
-		userRepo: userRepo,
-		hasher:   hasher,
-		log:      log,
+		userRepo:   userRepo,
+		hasher:     hasher,
+		log:        log,
+		jwtManager: jwtManager, 
 	}
 }
 
@@ -88,12 +96,14 @@ func (s *authService) Login(ctx context.Context, login, password string) (string
 			return "", "", ErrInvalidCredentials
 		}
 		s.log.Error("Ошибка при сравнении хеша пароля", zap.Error(err), zap.String("login", login))
-		return "", "", fmt.Errorf("%w: ошибка сравнения хеша", ErrLoginFailed)
+		return "", "", fmt.Errorf("%w: ошибка сравнения хеша: %v", ErrLoginFailed, err) 
 	}
 
-	// Генерация JWT токена (ЗАГЛУШКА)
-	// Здесь будет вызов jwtManager.Generate(user.ID.String())
-	token := "jwt_token_placeholder_" + user.ID.String() // Временная заглушка
+	token, err := s.jwtManager.Generate(user.ID.String()) 
+	if err != nil {
+		s.log.Error("Не удалось сгенерировать JWT токен", zap.Error(err), zap.String("userID", user.ID.String()))
+		return "", "", fmt.Errorf("%w: ошибка генерации токена", ErrLoginFailed)
+	}
 
 	s.log.Info("Пользователь успешно вошел в систему", zap.String("login", login), zap.String("userID", user.ID.String()))
 	return user.ID.String(), token, nil

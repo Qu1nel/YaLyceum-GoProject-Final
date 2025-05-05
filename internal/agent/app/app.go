@@ -13,6 +13,7 @@ import (
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/repository"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/service"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/hasher"
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/jwtauth"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/logger"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/postgres"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/shutdown"
@@ -88,6 +89,16 @@ func Run() {
 				})
 				return pool, nil
 			},
+
+			func(cfg *config.Config, log *zap.Logger) (*jwtauth.Manager, error) {
+                manager, err := jwtauth.NewManager(cfg.JWT.Secret, cfg.JWT.TokenTTL)
+                if err != nil {
+                    log.Fatal("Не удалось создать JWT менеджер", zap.Error(err))
+                    return nil, err // Fx остановит запуск
+                }
+                log.Info("JWT менеджер успешно создан", zap.Duration("token_ttl", cfg.JWT.TokenTTL))
+                return manager, nil
+            },
 
 			repository.NewPgxUserRepository,
 			service.NewAuthService,

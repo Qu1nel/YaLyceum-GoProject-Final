@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config определяет структуру конфигурации приложения.
 type Config struct {
 	AppEnv          string         `mapstructure:"APP_ENV"`
 	Server          ServerConfig   `mapstructure:",squash"`
@@ -28,8 +27,8 @@ type DatabaseConfig struct {
 }
 
 type JWTConfig struct {
-	Secret string `mapstructure:"JWT_SECRET"`
-	// TokenTTL time.Duration `mapstructure:"JWT_TOKEN_TTL"` // позже для времени жизни токена
+	Secret   string        `mapstructure:"JWT_SECRET"`
+	TokenTTL time.Duration `mapstructure:"JWT_TOKEN_TTL"`
 }
 
 type LoggerConfig struct {
@@ -39,11 +38,12 @@ type LoggerConfig struct {
 func Load() (*Config, error) {
 	viper.SetDefault("APP_ENV", "development")
 	viper.SetDefault("AGENT_HTTP_PORT", "8080")
-	viper.SetDefault("POSTGRES_DSN", "postgres://user:password@localhost:5432/calculator_db?sslmode=disable") // DSN по умолчанию для локального запуска без Docker
+	viper.SetDefault("POSTGRES_DSN", "postgres://user:password@localhost:5432/calculator_db?sslmode=disable")
 	viper.SetDefault("JWT_SECRET", "default-secret-key-please-change")
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("DB_POOL_MAX_CONNS", 10)
-	viper.SetDefault("GRACEFUL_TIMEOUT", 5*time.Second) // Таймаут для graceful shutdown
+	viper.SetDefault("GRACEFUL_TIMEOUT", 5*time.Second)
+	viper.SetDefault("JWT_TOKEN_TTL", "1h") // <-- TTL (1 час)
 
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -60,15 +60,16 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.JWT.Secret == "default-secret-key-please-change" || len(cfg.JWT.Secret) < 32 {
-		if cfg.AppEnv == "production" {
-			return nil, fmt.Errorf("переменная окружения JWT_SECRET должна быть установлена и иметь длину не менее 32 символов в production")
-		}
-		// В development просто предупреждаем (но Fx все равно упадет при старте)
-		fmt.Println("ПРЕДУПРЕЖДЕНИЕ: JWT_SECRET не установлен или слишком короткий. Используется значение по умолчанию.")
+        if cfg.AppEnv != "production" {
+            fmt.Println("ПРЕДУПРЕЖДЕНИЕ: JWT_SECRET не установлен или слишком короткий. Используется значение по умолчанию. НЕ ДЛЯ PRODUCTION!")
+        }
 	}
 	if cfg.Database.DSN == "" {
 		return nil, fmt.Errorf("переменная окружения POSTGRES_DSN должна быть установлена")
 	}
+    if cfg.JWT.TokenTTL <= 0 {
+        return nil, fmt.Errorf("переменная окружения JWT_TOKEN_TTL должна быть установлена и быть положительной длительностью (например, 1h, 15m)")
+    }
 
 	return &cfg, nil
 }
