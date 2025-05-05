@@ -29,7 +29,7 @@ worker
 # IDE settings/metadata
 .idea/
 .vscode/
-bin/ # Добавлено из твоего списка
+bin/ 
 
 # OS generated files
 .DS_Store

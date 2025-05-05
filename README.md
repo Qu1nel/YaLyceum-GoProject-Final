@@ -171,24 +171,24 @@
 
 ```mermaid
 graph LR
-    User[Пользователь] -- HTTP/S --> Agent[Agent Service (Go, Echo)];
-    Agent -- gRPC (TBD) --> Orchestrator[Orchestrator Service (Go, gRPC) (TBD)];
-    Agent -- SQL --> DB[(PostgreSQL)];
-    Orchestrator -- gRPC (TBD) --> Worker1[Worker Service (Go, gRPC) (TBD)];
-    Orchestrator -- gRPC (TBD) --> Worker2[Worker Service (Go, gRPC) (TBD)];
-    Orchestrator -- SQL (TBD) --> DB;
-    Worker1 --> Orchestrator;
-    Worker2 --> Orchestrator;
+    User[Пользователь] -- "HTTP/S" --> Agent["Agent Service (Go, Echo)"]
+    Agent -- "gRPC (TBD)" --> Orchestrator["Orchestrator Service (Go, gRPC) (TBD)"]
+    Agent -- SQL --> DB[(PostgreSQL)]
+    Orchestrator -- "gRPC (TBD)" --> Worker1["Worker Service (Go, gRPC) (TBD)"]
+    Orchestrator -- "gRPC (TBD)" --> Worker2["Worker Service (Go, gRPC) (TBD)"]
+    Orchestrator -- "SQL (TBD)" --> DB
+    Worker1 --> Orchestrator
+    Worker2 --> Orchestrator
 
-    subgraph Frontend [Frontend Service (JS) (TBD)]
+    subgraph Frontend ["Frontend Service (JS) (TBD)"]
         direction LR
         LoginUI[Форма Входа/Регистрации]
         CalcUI[Форма Выражения/Задачи]
     end
-    User -- Browser --> LoginUI;
-    User -- Browser --> CalcUI;
-    LoginUI -- HTTP/S --> Agent;
-    CalcUI -- HTTP/S --> Agent;
+    User -- Browser --> LoginUI
+    User -- Browser --> CalcUI
+    LoginUI -- "HTTP/S" --> Agent
+    CalcUI -- "HTTP/S" --> Agent
 ```
 
 ## Технологический стек
