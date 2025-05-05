@@ -97,14 +97,14 @@ check-docker: ## Проверить наличие docker-compose
 ##############################################################################
 
 help: ## Показать это справочное сообщение
-	@echo -e "\n$(BLUE)Доступные команды для 'make':$(RESET)"
+	@echo -e "\n$(BLUE)Available targets for "make":$(RESET)"
 	@echo "--------------------------------"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-20s$(RESET) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
-	@echo -e "\n$(BLUE)Пример использования:$(RESET)"
-	@echo "  make up       # Собрать и запустить всё"
-	@echo "  make test     # Запустить юнит-тесты"
-	@echo "  make logs     # Смотреть логи"
-	@echo "  make down     # Остановить и удалить всё (включая данные БД!)"
+	@echo -e "\n$(BLUE)Using example:$(RESET)"
+	@echo "  make up       # Build and run all"
+	@echo "  make test     # Run unit-tests"
+	@echo "  make logs     # See logs"
+	@echo "  make down     # Stop and remove all (include DB datas)"
 
 # Отладочные команды (из твоего примера)
 ##############################################################################
