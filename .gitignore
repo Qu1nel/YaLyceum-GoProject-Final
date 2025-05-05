@@ -21,11 +21,6 @@ go.work.sum
 # Environment file (ВАЖНО: не хранить секреты в репозитории!)
 .env
 
-# Binary executables (Go)
-agent
-orchestrator
-worker
-
 # IDE settings/metadata
 .idea/
 .vscode/
