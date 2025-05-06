@@ -1,0 +1,166 @@
+body { 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; /* Более современный системный шрифт */
+    margin: 20px; 
+    background-color: #f0f2f5; /* Немного другой фон */
+    color: #1c1e21; /* Основной цвет текста */
+    line-height: 1.6;
+}
+
+.container { 
+    background-color: #fff; 
+    padding: 25px; 
+    border-radius: 8px; 
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 8px 16px rgba(0,0,0,0.1); /* Более выраженная тень */
+    max-width: 700px; /* Ограничим ширину для лучшей читаемости */
+    margin: 30px auto; /* Центрируем контейнер */
+}
+
+h1, h2 { 
+    text-align: center; 
+    color: #1c1e21; 
+}
+h1 { font-size: 28px; margin-bottom: 20px; }
+h2 { font-size: 22px; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;}
+
+
+.form-group { 
+    margin-bottom: 18px; 
+}
+
+label { 
+    display: block; 
+    margin-bottom: 6px; 
+    font-weight: 600; /* Немного жирнее */
+    color: #333;
+}
+
+input[type="text"], 
+input[type="password"] { 
+    width: calc(100% - 24px); /* Учтем padding */
+    padding: 10px 12px; 
+    border: 1px solid #ccd0d5; 
+    border-radius: 6px; 
+    font-size: 16px;
+    transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+input[type="text"]:focus, 
+input[type="password"]:focus {
+    border-color: #1877f2; /* Цвет фокуса как у Facebook */
+    box-shadow: 0 0 0 2px rgba(24, 119, 242, 0.2);
+    outline: none;
+}
+
+button { 
+    background-color: #1877f2; /* Основной синий */
+    color: white; 
+    padding: 10px 20px; 
+    border: none; 
+    border-radius: 6px; 
+    cursor: pointer; 
+    font-size: 16px; 
+    font-weight: 600;
+    transition: background-color 0.2s ease-in-out;
+    display: inline-block; /* Чтобы кнопки не растягивались на всю ширину по умолчанию */
+    margin-top: 5px;
+}
+button:hover { 
+    background-color: #166fe5; /* Немного темнее при наведении */
+}
+button:disabled {
+    background-color: #bec3c9;
+    cursor: not-allowed;
+}
+
+
+.auth-forms p, .calculator-section p {
+    font-size: 14px;
+    text-align: center;
+}
+.auth-forms a, .calculator-section a {
+    color: #1877f2;
+    text-decoration: none;
+    font-weight: 600;
+}
+.auth-forms a:hover, .calculator-section a:hover {
+    text-decoration: underline;
+}
+
+
+#logoutButton { 
+    background-color: #e4e6eb; /* Светло-серый */
+    color: #1c1e21; /* Темный текст */
+    margin-left: 15px; /* Отступ от "Привет" */
+}
+#logoutButton:hover { 
+    background-color: #ccd0d5; 
+}
+
+.hidden { 
+    display: none !important; /* !important для переопределения возможных других стилей */
+}
+
+#messages { 
+    margin-top: 20px;
+    margin-bottom: 20px; 
+    padding: 12px 15px; 
+    border-radius: 6px; 
+    font-size: 15px;
+}
+.success { 
+    background-color: #e9f5e9; /* Более мягкий зеленый */
+    color: #1e4620; 
+    border: 1px solid #c5e0c5; 
+}
+.error { 
+    background-color: #fdecea; /* Более мягкий красный */
+    color: #5a1612; 
+    border: 1px solid #f8c6c3; 
+}
+
+ul#taskList { 
+    list-style-type: none; 
+    padding: 0; 
+    margin-top: 10px;
+}
+ul#taskList li { 
+    background-color: #f0f2f5; 
+    margin-bottom: 10px; 
+    padding: 12px 15px; 
+    border-radius: 6px; 
+    cursor: pointer; 
+    border: 1px solid #e0e0e0;
+    transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+ul#taskList li:hover { 
+    background-color: #e4e6eb;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+ul#taskList li .task-expression { font-weight: 600; }
+ul#taskList li .task-status { font-size: 0.9em; color: #606770; padding: 3px 8px; border-radius: 4px; }
+.task-status.pending { background-color: #fff3cd; color: #664d03; }
+.task-status.processing { background-color: #cfe2ff; color: #0a3678; }
+.task-status.completed { background-color: #d1e7dd; color: #0f5132; }
+.task-status.failed { background-color: #f8d7da; color: #58151c; }
+
+
+.task-details-view { 
+    margin-top:20px; 
+    padding:20px; 
+    border:1px solid #ccd0d5; 
+    border-radius:6px; 
+    background-color: #f9f9f9;
+}
+.task-details-view h3 { margin-top:0; color: #1c1e21; }
+.task-details-view p { margin-bottom: 8px; font-size: 15px; }
+.task-details-view strong { color: #333; }
+
+/* Стили для кнопок с иконками (если будем добавлять) */
+.icon-button {
+    background: none;
+    border: none;
+    padding: 5px;
+    cursor: pointer;
+}

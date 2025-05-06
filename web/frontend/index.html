@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Калькулятор Выражений</title>
+    <link rel="stylesheet" href="style.css"> 
+</head>
+<body>
+    <div class="container">
+        <h1>Калькулятор Выражений</h1>
+
+        <!-- Сообщения для пользователя -->
+        <div id="messages" class="hidden"></div>
+
+        <!-- Формы Аутентификации (Регистрация и Вход) -->
+        <div id="authSection" class="auth-forms">
+            <div id="registerFormContainer">
+                <h2>Регистрация</h2>
+                <form id="registerForm">
+                    <div class="form-group">
+                        <label for="registerLogin">Логин:</label>
+                        <input type="text" id="registerLogin" name="registerLogin" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="registerPassword">Пароль:</label>
+                        <input type="password" id="registerPassword" name="registerPassword" required minlength="6">
+                    </div>
+                    <button type="submit">Зарегистрироваться</button>
+                </form>
+                <p>Уже есть аккаунт? <a href="#" id="showLoginLink">Войти</a></p>
+            </div>
+
+            <div id="loginFormContainer" class="hidden">
+                <h2>Вход</h2>
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="loginLogin">Логин:</label>
+                        <input type="text" id="loginLogin" name="loginLogin" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Пароль:</label>
+                        <input type="password" id="loginPassword" name="loginPassword" required>
+                    </div>
+                    <button type="submit">Войти</button>
+                </form>
+                <p>Нет аккаунта? <a href="#" id="showRegisterLink">Зарегистрироваться</a></p>
+            </div>
+        </div>
+
+        <!-- Секция Калькулятора (для аутентифицированных пользователей) -->
+        <div id="calculatorSection" class="calculator-section hidden">
+            <h2>Калькулятор</h2>
+            <p>Привет, <span id="currentUserLogin"></span>! <button id="logoutButton">Выход</button></p>
+            <form id="expressionForm">
+                <div class="form-group">
+                    <label for="expressionInput">Введите выражение:</label>
+                    <input type="text" id="expressionInput" name="expressionInput" placeholder="например, (2 + 2) * 2" required>
+                </div>
+                <button type="submit">Вычислить</button>
+            </form>
+
+            <div class="tasks-section">
+                <h2>Ваши Задачи</h2>
+                <button id="refreshTasksButton">Обновить список задач</button>
+                <ul id="taskList">
+                    <!-- Задачи будут добавлены сюда через JS -->
+                </ul>
+                <div id="taskDetailsView" class="task-details-view hidden">
+                    <!-- Детали выбранной задачи -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
