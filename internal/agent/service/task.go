@@ -80,8 +80,8 @@ func (s *taskService) SubmitNewTask(ctx context.Context, userID, expression stri
 	grpcRes, err := s.orchestratorClient.SubmitExpression(grpcCtx, grpcReq)
 	if err != nil {
 		s.log.Error("Ошибка gRPC вызова SubmitExpression из TaskService", zap.Error(err))
-        st, _ := status.FromError(err)
-		return "", fmt.Errorf("ошибка сервиса вычислений: %s (код: %s)", st.Message(), st.Code())
+		// Оборачиваем оригинальную gRPC ошибку
+		return "", fmt.Errorf("ошибка сервиса вычислений: %w", err) // <--- ИСПОЛЬЗУЕМ %w
 	}
 	return grpcRes.GetTaskId(), nil
 }
@@ -95,13 +95,14 @@ func (s *taskService) GetUserTasks(ctx context.Context, userID string) ([]TaskLi
     grpcRes, err := s.orchestratorClient.ListUserTasks(grpcCtx, grpcReq)
     if err != nil {
         s.log.Error("Ошибка gRPC вызова ListUserTasks из TaskService", zap.Error(err), zap.String("userID", userID))
-        st, _ := status.FromError(err)
-        return nil, fmt.Errorf("ошибка получения списка задач: %s (код: %s)", st.Message(), st.Code())
+        return nil, fmt.Errorf("ошибка получения списка задач: %w", err) // <--- ИСПОЛЬЗУЕМ %w
     }
-
     tasks := make([]TaskListItem, 0, len(grpcRes.GetTasks()))
     for _, pbTask := range grpcRes.GetTasks() {
-        createdAt, _ := time.Parse(time.RFC3339Nano, pbTask.GetCreatedAt()) // Ошибку парсинга можно обработать
+        createdAt, pErr := time.Parse(time.RFC3339Nano, pbTask.GetCreatedAt())
+        if pErr != nil {
+            s.log.Warn("Не удалось распарсить CreatedAt из gRPC ответа", zap.Error(pErr), zap.String("value", pbTask.GetCreatedAt()))
+        }
         tasks = append(tasks, TaskListItem{
             ID:         pbTask.GetId(),
             Expression: pbTask.GetExpression(),
@@ -120,21 +121,24 @@ func (s *taskService) GetTaskDetails(ctx context.Context, userID, taskID string)
     grpcReq := &pb_orchestrator.TaskDetailsRequest{UserId: userID, TaskId: taskID}
     grpcRes, err := s.orchestratorClient.GetTaskDetails(grpcCtx, grpcReq)
     if err != nil {
-        s.log.Error("Ошибка gRPC вызова GetTaskDetails из TaskService",
-            zap.Error(err),
-            zap.String("userID", userID),
-            zap.String("taskID", taskID),
-        )
-        st, _ := status.FromError(err)
-        // Специально обрабатываем NotFound, чтобы вернуть его в хендлер
-        if st.Code() == codes.NotFound {
-             return nil, fmt.Errorf("%w: %s", ErrTaskNotFound, st.Message()) // Обернем нашу ошибку
+        s.log.Error("Ошибка gRPC вызова GetTaskDetails из TaskService", zap.Error(err), zap.String("userID", userID), zap.String("taskID", taskID))
+        st, ok := status.FromError(err) // Проверяем, является ли это gRPC ошибкой статуса
+        if ok && st.Code() == codes.NotFound {
+             // Оборачиваем нашу кастомную ошибку ErrTaskNotFound, а также оригинальную gRPC ошибку
+             return nil, fmt.Errorf("%w: %w", ErrTaskNotFound, err)
         }
-        return nil, fmt.Errorf("ошибка получения деталей задачи: %s (код: %s)", st.Message(), st.Code())
+        // Для других gRPC ошибок просто оборачиваем оригинальную
+        return nil, fmt.Errorf("ошибка получения деталей задачи: %w", err) // <--- ИСПОЛЬЗUЕМ %w
     }
-
-    createdAt, _ := time.Parse(time.RFC3339Nano, grpcRes.GetCreatedAt())
-    updatedAt, _ := time.Parse(time.RFC3339Nano, grpcRes.GetUpdatedAt())
+    // ... остальная логика ...
+    createdAt, cErr := time.Parse(time.RFC3339Nano, grpcRes.GetCreatedAt())
+    if cErr != nil {
+        s.log.Warn("Не удалось распарсить CreatedAt для деталей задачи", zap.Error(cErr), zap.String("value", grpcRes.GetCreatedAt()))
+    }
+    updatedAt, uErr := time.Parse(time.RFC3339Nano, grpcRes.GetUpdatedAt())
+    if uErr != nil {
+         s.log.Warn("Не удалось распарсить UpdatedAt для деталей задачи", zap.Error(uErr), zap.String("value", grpcRes.GetUpdatedAt()))
+    }
 
     details := &TaskDetails{
         ID:         grpcRes.GetId(),
@@ -143,17 +147,13 @@ func (s *taskService) GetTaskDetails(ctx context.Context, userID, taskID string)
         CreatedAt:  createdAt,
         UpdatedAt:  updatedAt,
     }
-    // Результат и ошибка могут быть nil в Task из репозитория, но в gRPC это просто пустые значения,
-    // если их не установить. Proto3 по умолчанию для float64 это 0.0, для string - пустая строка.
-    // Мы сделали Result и ErrorMessage в Task DTO указателями, чтобы передать null.
     if grpcRes.GetStatus() == repository.StatusCompleted {
-        resCopy := grpcRes.GetResult() // Копируем значение
+        resCopy := grpcRes.GetResult()
         details.Result = &resCopy
     }
     if grpcRes.GetStatus() == repository.StatusFailed && grpcRes.GetErrorMessage() != "" {
         errMsgCopy := grpcRes.GetErrorMessage()
         details.ErrorMessage = &errMsgCopy
     }
-
     return details, nil
 }
