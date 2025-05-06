@@ -83,6 +83,18 @@ services:
       GRPC_CLIENT_TIMEOUT: ${GRPC_CLIENT_TIMEOUT:-5s}
     networks:
       - calculator_net
+  
+  frontend:
+    container_name: calculator_frontend
+    build:
+      context: ./web/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      - agent 
+    networks:
+      - calculator_net
 
 volumes:
   postgres_data:
