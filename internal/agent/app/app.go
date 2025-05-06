@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/client"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/config"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/handler"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/middleware"
@@ -27,6 +28,19 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	// "google.golang.org/grpc"
 )
+
+// Адаптер для предоставления конфигурации gRPC клиента Оркестратора через интерфейс.
+// Это нужно, чтобы NewOrchestratorServiceClient мог зависеть от интерфейса, а не конкретной структуры Config.
+type orchestratorClientConfigAdapter struct {
+    cfg *config.Config
+}
+
+func (a *orchestratorClientConfigAdapter) GetOrchestratorAddress() string {
+    return a.cfg.OrchestratorClient.OrchestratorAddress
+}
+func (a *orchestratorClientConfigAdapter) GetGRPCClientTimeout() time.Duration {
+    return a.cfg.OrchestratorClient.Timeout
+}
 
 // Run запускает приложение Agent с использованием Fx для управления зависимостями и жизненным циклом.
 func Run() {
@@ -80,6 +94,10 @@ func Run() {
 				}
 				return cfg, nil
 			},
+			            // Адаптер конфигурации для клиента Оркестратора
+            func(cfg *config.Config) client.OrchestratorClientConfigProvider {
+                return &orchestratorClientConfigAdapter{cfg: cfg}
+			},
 			// 2. Логгер (передаем уже созданный экземпляр)
 			func() *zap.Logger {
 				return log
@@ -126,6 +144,10 @@ func Run() {
 				log.Info("JWT менеджер успешно создан", zap.Duration("token_ttl", cfg.JWT.TokenTTL))
 				return manager, nil
 			},
+			// 4.7 gRPC Клиент Оркестратора
+            // Fx автоматически передаст OrchestratorClientParams
+            // (Lifecycle, Logger, OrchestratorClientConfigProvider)
+            client.NewOrchestratorServiceClient,
 
 			// 4.6 JWT Auth Middleware
 			// Fx автоматически передаст *jwtauth.Manager и *zap.Logger
@@ -154,12 +176,11 @@ func Run() {
 		// Регистрируем Invoke функции, которые выполняют действия при старте/стопе.
 		// Они обычно используются для запуска серверов, регистрации маршрутов и т.д.
 		fx.Invoke(func(lc fx.Lifecycle, e *echo.Echo, cfg *config.Config, log *zap.Logger,
-			// Запрашиваем зависимости, которые нужны в этой функции:
-			pool *pgxpool.Pool, // Нужен для Graceful Shutdown
-			authHandler *handler.AuthHandler, // Нужен для регистрации маршрутов
-			taskHandler *handler.TaskHandler, // <-- Запросили TaskHandler
-            jwtAuthMiddleware echo.MiddlewareFunc, // <-- Запросили JWT Middleware
-		) {
+            pool *pgxpool.Pool,
+            authHandler *handler.AuthHandler,
+            taskHandler *handler.TaskHandler,
+            jwtAuthMiddleware echo.MiddlewareFunc,
+        ) {
 			// --- Регистрация Маршрутов ---
 
 			// Группа для API V1

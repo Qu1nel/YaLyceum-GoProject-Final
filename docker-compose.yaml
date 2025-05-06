@@ -21,6 +21,24 @@ services:
     networks:
       - calculator_net
 
+  orchestrator:
+    container_name: calculator_orchestrator
+    build:
+      context: .
+      dockerfile: cmd/orchestrator/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy 
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      GRACEFUL_TIMEOUT: ${GRACEFUL_TIMEOUT:-5s}
+      POSTGRES_DSN: "postgres://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-calculator_db}?sslmode=disable"
+      DB_POOL_MAX_CONNS: ${DB_POOL_MAX_CONNS:-10}
+      ORCHESTRATOR_GRPC_PORT: ${ORCHESTRATOR_GRPC_PORT:-50051}
+    networks:
+      - calculator_net
+
   agent:
     container_name: calculator_agent
     build:
@@ -29,18 +47,22 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      orchestrator:
+         condition: service_started
     ports:
       - "${AGENT_HTTP_PORT:-8080}:8080"
     environment:
       APP_ENV: ${APP_ENV:-development}
-      AGENT_HTTP_PORT: ${AGENT_HTTP_PORT:-8080}
-      POSTGRES_DSN: "postgres://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-calculator_db}?sslmode=disable"
-      JWT_SECRET: ${JWT_SECRET:-your_very_secret_key_change_me}
       LOG_LEVEL: ${LOG_LEVEL:-debug}
-      # Другие переменные (таймауты, etc.) можно добавить позже
+      GRACEFUL_TIMEOUT: ${GRACEFUL_TIMEOUT:-5s}
+      POSTGRES_DSN: "postgres://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-calculator_db}?sslmode=disable"
+      DB_POOL_MAX_CONNS: ${DB_POOL_MAX_CONNS:-10}
+      JWT_SECRET: ${JWT_SECRET:-your_very_secret_key_change_me}
+      JWT_TOKEN_TTL: ${JWT_TOKEN_TTL:-1h}
+      ORCHESTRATOR_GRPC_ADDRESS: ${ORCHESTRATOR_GRPC_ADDRESS:-orchestrator:50051} 
+      GRPC_CLIENT_TIMEOUT: ${GRPC_CLIENT_TIMEOUT:-5s}
     networks:
       - calculator_net
-    # Добавим позже volumes для .env, если решим не передавать все через environment
 
 volumes:
   postgres_data:

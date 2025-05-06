@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/viper"
 )
 
+
 type Config struct {
 	AppEnv          string         `mapstructure:"APP_ENV"`
 	Server          ServerConfig   `mapstructure:",squash"`
@@ -15,6 +16,7 @@ type Config struct {
 	JWT             JWTConfig      `mapstructure:",squash"`
 	Logger          LoggerConfig   `mapstructure:",squash"`
 	GracefulTimeout time.Duration  `mapstructure:"GRACEFUL_TIMEOUT"`
+	OrchestratorClient GRPCClientConfig `mapstructure:",squash"`
 }
 
 type ServerConfig struct {
@@ -35,6 +37,13 @@ type LoggerConfig struct {
 	Level string `mapstructure:"LOG_LEVEL"`
 }
 
+// GRPCClientConfig содержит конфигурацию для gRPC клиента.
+type GRPCClientConfig struct {
+	OrchestratorAddress string        `mapstructure:"ORCHESTRATOR_GRPC_ADDRESS"`
+	Timeout             time.Duration `mapstructure:"GRPC_CLIENT_TIMEOUT"`
+    // Можно добавить Retry, Keepalive параметры позже
+}
+
 func Load() (*Config, error) {
 	viper.SetDefault("APP_ENV", "development")
 	viper.SetDefault("AGENT_HTTP_PORT", "8080")
@@ -43,7 +52,9 @@ func Load() (*Config, error) {
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("DB_POOL_MAX_CONNS", 10)
 	viper.SetDefault("GRACEFUL_TIMEOUT", 5*time.Second)
-	viper.SetDefault("JWT_TOKEN_TTL", "1h") // <-- TTL (1 час)
+	viper.SetDefault("JWT_TOKEN_TTL", "1h") // TTL (1 час)
+	viper.SetDefault("ORCHESTRATOR_GRPC_ADDRESS", "orchestrator:50051") // Адрес по умолчанию (имя сервиса в Docker Compose и порт)
+	viper.SetDefault("GRPC_CLIENT_TIMEOUT", "5s")
 
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
@@ -69,6 +80,12 @@ func Load() (*Config, error) {
 	}
     if cfg.JWT.TokenTTL <= 0 {
         return nil, fmt.Errorf("переменная окружения JWT_TOKEN_TTL должна быть установлена и быть положительной длительностью (например, 1h, 15m)")
+    }
+	if cfg.OrchestratorClient.OrchestratorAddress == "" {
+		return nil, fmt.Errorf("переменная окружения ORCHESTRATOR_GRPC_ADDRESS должна быть установлена")
+	}
+    if cfg.OrchestratorClient.Timeout <= 0 {
+        return nil, fmt.Errorf("GRPC_CLIENT_TIMEOUT должен быть положительной длительностью")
     }
 
 	return &cfg, nil

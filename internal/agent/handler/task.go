@@ -2,11 +2,17 @@ package handler
 
 import (
 	"net/http"
+	"time"
 
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/config"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/middleware"
-	"github.com/google/uuid"
+	pb "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/orchestrator"
+
+	"context"
+
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/status"
 )
 
 type CalculateRequest struct {
@@ -18,13 +24,22 @@ type CalculateResponse struct {
 }
 
 type TaskHandler struct {
-	log *zap.Logger
+	log               *zap.Logger
+	orchestratorClient pb.OrchestratorServiceClient // gRPC клиент
+	grpcClientTimeout time.Duration                // Таймаут для gRPC вызовов
 }
 
-func NewTaskHandler(log *zap.Logger /*, taskService service.TaskService */) *TaskHandler {
+
+// NewTaskHandler теперь принимает OrchestratorServiceClient и конфигурацию.
+func NewTaskHandler(
+	log *zap.Logger,
+	orcClient pb.OrchestratorServiceClient,
+	cfg *config.Config, // Получаем весь конфиг, чтобы взять таймаут
+) *TaskHandler {
 	return &TaskHandler{
-		log: log,
-		// taskService: taskService,
+		log:                log,
+		orchestratorClient: orcClient,
+		grpcClientTimeout:  cfg.OrchestratorClient.Timeout, // Берем таймаут из конфига
 	}
 }
 
@@ -71,15 +86,36 @@ func (h *TaskHandler) Calculate(c echo.Context) error {
 		zap.String("expression", req.Expression),
 	)
 
-	// 4. TODO: Вызвать сервис (например, TaskService), который передаст задачу Оркестратору по gRPC.
-	// taskID, err := h.taskService.CreateTask(c.Request().Context(), userID, req.Expression)
-	// Обработка ошибок сервиса...
+	// Создаем контекст с таймаутом для gRPC вызова
+	ctx, cancel := context.WithTimeout(c.Request().Context(), h.grpcClientTimeout)
+	defer cancel()
 
-	// ЗАГЛУШКА: Генерируем фейковый ID задачи для ответа
-	fakeTaskID := uuid.NewString()
+	// Вызов gRPC метода Оркестратора
+	grpcReq := &pb.ExpressionRequest{
+		UserId:     userID,
+		Expression: req.Expression,
+	}
 
-	// 5. Возвращаем ответ 202 Accepted с ID задачи.
-	return c.JSON(http.StatusAccepted, CalculateResponse{TaskID: fakeTaskID})
+	grpcRes, err := h.orchestratorClient.SubmitExpression(ctx, grpcReq)
+	if err != nil {
+		h.log.Error("Ошибка при вызове gRPC SubmitExpression Оркестратора",
+			zap.String("userID", userID),
+			zap.String("expression", req.Expression),
+			zap.Error(err),
+		)
+		// Преобразуем gRPC ошибку в HTTP ошибку
+		st, _ := status.FromError(err) // Игнорируем ok, т.к. даже если это не gRPC ошибка, код будет Unknown
+		// Можно добавить более детальную обработку кодов gRPC (Unavailable, DeadlineExceeded и т.д.)
+		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Ошибка взаимодействия с сервисом вычислений: " + st.Message()})
+	}
+
+	h.log.Info("Выражение успешно отправлено в Оркестратор",
+		zap.String("userID", userID),
+		zap.String("expression", req.Expression),
+		zap.String("returned_task_id", grpcRes.GetTaskId()),
+	)
+
+	return c.JSON(http.StatusAccepted, CalculateResponse{TaskID: grpcRes.GetTaskId()})
 }
 
 // RegisterRoutes регистрирует маршруты для задач в защищенной группе.
