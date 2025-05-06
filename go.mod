@@ -3,7 +3,7 @@ module github.com/Qu1nel/YaLyceum-GoProject-Final
 go 1.24.2
 
 require (
-	github.com/Knetic/govaluate v3.0.0+incompatible
+	github.com/expr-lang/expr v1.17.2
 	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.4

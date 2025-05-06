@@ -2,11 +2,17 @@ package grpc_handler
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"time"
 
-	"github.com/Knetic/govaluate"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/repository"
 	pb "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/orchestrator"
 	pb_worker "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/worker"
+
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/ast"
+
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -33,70 +39,91 @@ func NewOrchestratorServer(
 	}
 }
 func (s *OrchestratorServer) SubmitExpression(ctx context.Context, req *pb.ExpressionRequest) (*pb.ExpressionResponse, error) {
-    // ... (логирование, валидация, проверка парсером, создание задачи в БД) ...
-    userID, _ := uuid.Parse(req.GetUserId()) // Ошибку парсинга уже обработали
-    expression := req.GetExpression()
+	userIDStr := req.GetUserId()
+	expression := req.GetExpression()
 
-    // Проверка парсинга govaluate
-    _, parseErr := govaluate.NewEvaluableExpression(expression)
-    if parseErr != nil {
-        s.log.Warn("Ошибка синтаксиса выражения (govaluate)", zap.Error(parseErr))
-        return nil, status.Errorf(codes.InvalidArgument, "ошибка в синтаксисе выражения: %v", parseErr)
-    }
+	s.log.Info("Получен gRPC запрос SubmitExpression",
+		zap.String("userID", userIDStr),
+		zap.String("expression", expression),
+	)
 
-    taskID, err := s.taskRepo.CreateTask(ctx, userID, expression)
-    if err != nil {
-        s.log.Error("Ошибка при создании задачи", zap.Error(err))
-        return nil, status.Error(codes.Internal, "внутренняя ошибка сервера")
-    }
-    s.log.Info("Задача успешно создана", zap.String("taskID", taskID.String()))
+	// Валидация userID и expression
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		s.log.Warn("Невалидный формат UserID", zap.String("userID", userIDStr), zap.Error(err))
+		return nil, status.Errorf(codes.InvalidArgument, "невалидный формат userID: %v", err)
+	}
+	if expression == "" {
+		s.log.Warn("Пустое выражение", zap.String("userID", userIDStr))
+		return nil, status.Error(codes.InvalidArgument, "expression не может быть пустым")
+	}
 
+	// === Шаг 1: Парсинг/Компиляция выражения с помощью expr.Compile ===
+	program, compileErr := expr.Compile(expression)
+	if compileErr != nil {
+		// Ошибка парсинга или компиляции (например, синтаксическая или ошибка типов)
+		s.log.Warn("Ошибка компиляции/парсинга выражения (expr)",
+			zap.String("expression", expression),
+			zap.Error(compileErr),
+		)
+		// Возвращаем ошибку InvalidArgument клиенту с текстом ошибки от expr
+		return nil, status.Errorf(codes.InvalidArgument, "ошибка в выражении: %s", compileErr.Error())
+	}
+	s.log.Info("Выражение успешно скомпилировано и распарсено в AST (expr)", zap.String("expression", expression))
+	astRootNode := program.Node // Получаем корневой узел AST
 
-    // ----- ЗАГЛУШКА: Вызов Воркера для первой операции (например, сложения) -----
-    // В реальной системе это будет делаться асинхронно и на основе дерева выражения
-    s.log.Info("Демонстрационный вызов Воркера для операции '+'", zap.String("taskID", taskID.String()))
-    workerReq := &pb_worker.CalculateOperationRequest{
-        OperationId:   uuid.NewString(), // Генерируем ID для операции
-        OperationSymbol: "+",
-        OperandA:      10, // Фейковые операнды
-        OperandB:      5,
-    }
+	// === Шаг 2: Создание задачи в БД ===
+	taskID, err := s.taskRepo.CreateTask(ctx, userID, expression)
+	if err != nil {
+		s.log.Error("Ошибка при создании задачи в репозитории", zap.Error(err))
+		// Определяем тип ошибки базы данных для более точного ответа gRPC
+		if errors.Is(err, repository.ErrDatabase) { // Используем нашу общую ошибку БД
+			return nil, status.Error(codes.Internal, "внутренняя ошибка сервера при создании задачи")
+		}
+		// Если это другая ошибка (хотя CreateTask пока возвращает только ErrDatabase)
+		return nil, status.Errorf(codes.Unknown, "неизвестная ошибка при создании задачи: %v", err)
+	}
+	s.log.Info("Задача успешно создана", zap.String("taskID", taskID.String()))
 
-    // Контекст для вызова воркера (можно использовать изначальный ctx или создать новый с таймаутом)
-    // workerCtx, workerCancel := context.WithTimeout(context.Background(), 5*time.Second) // Пример с таймаутом
-    // defer workerCancel()
-    // Используем пока основной контекст запроса
-    workerCtx := ctx
+	// === Шаг 3: Асинхронный запуск вычисления (TBD) ===
+	s.log.Info("Планируется запуск асинхронного вычисления",
+		zap.String("taskID", taskID.String()),
+		zap.Any("ast_root_type", fmt.Sprintf("%T", astRootNode)),
+	)
 
-    workerRes, workerErr := s.workerClient.CalculateOperation(workerCtx, workerReq)
-    if workerErr != nil {
-         s.log.Error("Ошибка при вызове Воркера (демо)",
-             zap.String("taskID", taskID.String()),
-             zap.String("operationID", workerReq.OperationId),
-             zap.Error(workerErr),
-         )
-        // TODO: Обработать ошибку Воркера (например, обновить статус задачи на failed)
-    } else if workerRes.ErrorMessage != "" {
-        s.log.Error("Воркер вернул ошибку (демо)",
-             zap.String("taskID", taskID.String()),
-             zap.String("operationID", workerReq.OperationId),
-             zap.String("workerError", workerRes.ErrorMessage),
-        )
-        // TODO: Обработать ошибку Воркера
-    } else {
-        s.log.Info("Воркер успешно вернул результат (демо)",
-             zap.String("taskID", taskID.String()),
-             zap.String("operationID", workerReq.OperationId),
-             zap.Float64("result", workerRes.Result),
-        )
-        // TODO: Использовать результат для дальнейших вычислений
-    }
-    // ----- Конец ЗАГЛУШКИ вызова Воркера -----
+	// go s.startEvaluation(taskID, astRootNode) // Запустим позже
 
-
-    // Возвращаем ID созданной задачи
-    return &pb.ExpressionResponse{TaskId: taskID.String()}, nil
+	// === Шаг 4: Возвращаем ID задачи Агенту ===
+	return &pb.ExpressionResponse{TaskId: taskID.String()}, nil
 }
+
+func (s *OrchestratorServer) startEvaluation(taskID uuid.UUID, rootNode ast.Node) {
+    // Создаем новый контекст для вычисления, возможно, с таймаутом
+    //evalCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute) // Пример таймаута
+    _, cancel := context.WithTimeout(context.Background(), 1*time.Minute) // Пример таймаута
+    defer cancel()
+
+    s.log.Info("Запуск вычисления задачи в горутине", zap.String("taskID", taskID.String()))
+
+    // 1. Обновить статус задачи на "processing"
+    // err := s.taskRepo.UpdateTaskStatus(evalCtx, taskID, repository.StatusProcessing)
+    // if err != nil { ... обработать ошибку обновления статуса ...; return }
+
+    // 2. Вызвать рекурсивный вычислитель
+    // evaluator := NewExpressionEvaluator(s.log, s.workerClient) // Создать сервис-вычислитель
+    // result, evalErr := evaluator.Evaluate(evalCtx, rootNode)
+
+    // 3. Обработать результат
+    // if evalErr != nil {
+    //    // Обновить статус на "failed", записать ошибку
+    //    s.taskRepo.SetTaskError(evalCtx, taskID, evalErr.Error())
+    // } else {
+    //    // Обновить статус на "completed", записать результат
+    //    s.taskRepo.SetTaskResult(evalCtx, taskID, result)
+    // }
+    s.log.Warn("Логика вычисления в startEvaluation еще не реализована", zap.String("taskID", taskID.String())) // Временный лог
+}
+
 
 // GetTaskDetails (Заглушка)
 func (s *OrchestratorServer) GetTaskDetails(ctx context.Context, req *pb.TaskDetailsRequest) (*pb.TaskDetailsResponse, error) {
