@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -36,6 +34,26 @@ services:
       POSTGRES_DSN: "postgres://${POSTGRES_USER:-user}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-calculator_db}?sslmode=disable"
       DB_POOL_MAX_CONNS: ${DB_POOL_MAX_CONNS:-10}
       ORCHESTRATOR_GRPC_PORT: ${ORCHESTRATOR_GRPC_PORT:-50051}
+      WORKER_GRPC_ADDRESS: ${WORKER_GRPC_ADDRESS:-worker:50052}
+      GRPC_CLIENT_TIMEOUT: ${GRPC_CLIENT_TIMEOUT:-5s}
+    networks:
+      - calculator_net
+
+  worker:
+    container_name: calculator_worker
+    build:
+      context: .
+      dockerfile: cmd/worker/Dockerfile
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      GRACEFUL_TIMEOUT: ${GRACEFUL_TIMEOUT:-5s}
+      WORKER_GRPC_PORT: ${WORKER_GRPC_PORT:-50052}
+      TIME_ADDITION_MS: ${TIME_ADDITION_MS:-200ms}
+      TIME_SUBTRACTION_MS: ${TIME_SUBTRACTION_MS:-200ms}
+      TIME_MULTIPLICATION_MS: ${TIME_MULTIPLICATION_MS:-300ms}
+      TIME_DIVISION_MS: ${TIME_DIVISION_MS:-400ms}
+      TIME_EXPONENTIATION_MS: ${TIME_EXPONENTIATION_MS:-500ms}
     networks:
       - calculator_net
 
@@ -48,6 +66,8 @@ services:
       postgres:
         condition: service_healthy
       orchestrator:
+         condition: service_started
+      worker: 
          condition: service_started
     ports:
       - "${AGENT_HTTP_PORT:-8080}:8080"

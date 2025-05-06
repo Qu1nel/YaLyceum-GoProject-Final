@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.4
 	github.com/labstack/echo/v4 v4.13.3
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/spf13/viper v1.20.1
 	go.uber.org/fx v1.23.0
 	go.uber.org/zap v1.27.0
