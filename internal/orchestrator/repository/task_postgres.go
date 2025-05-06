@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 )
 
-// Определим статусы задач как константы для надежности
 const (
 	StatusPending    = "pending"
 	StatusProcessing = "processing"
@@ -19,54 +19,40 @@ const (
 	StatusFailed     = "failed"
 )
 
-// Task модель для репозитория Оркестратора.
 type Task struct {
 	ID           uuid.UUID
 	UserID       uuid.UUID
 	Expression   string
 	Status       string
-	Result       *float64 // Используем указатель, чтобы различать 0 и NULL
-	ErrorMessage *string  // Используем указатель для NULL
+	Result       *float64
+	ErrorMessage *string
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
 
-// Определим возможные ошибки репозитория задач
 var (
 	ErrTaskNotFound = errors.New("задача не найдена")
-	// ErrDatabase используется из репозитория пользователей Agent, но можно определить и здесь
-	ErrDatabase = errors.New("ошибка базы данных")
+	ErrDatabase     = errors.New("ошибка базы данных")
 )
 
-// TaskRepository определяет интерфейс для работы с данными задач.
 type TaskRepository interface {
-	// CreateTask создает новую задачу в БД и возвращает ее ID.
 	CreateTask(ctx context.Context, userID uuid.UUID, expression string) (uuid.UUID, error)
-	// GetTaskByID получает задачу по ее ID.
 	GetTaskByID(ctx context.Context, taskID uuid.UUID) (*Task, error)
-    // GetTasksByUserID получает список задач для пользователя (позже с пагинацией).
-    GetTasksByUserID(ctx context.Context, userID uuid.UUID) ([]Task, error)
-	// UpdateTaskStatus обновляет статус задачи.
+	GetTasksByUserID(ctx context.Context, userID uuid.UUID /*, limit, offset int*/) ([]Task, error) // Пагинацию добавим позже
 	UpdateTaskStatus(ctx context.Context, taskID uuid.UUID, status string) error
-	// SetTaskResult обновляет результат и статус задачи на 'completed'.
 	SetTaskResult(ctx context.Context, taskID uuid.UUID, result float64) error
-	// SetTaskError обновляет сообщение об ошибке и статус задачи на 'failed'.
 	SetTaskError(ctx context.Context, taskID uuid.UUID, errorMessage string) error
-    // TODO: Добавить методы для выбора задач на обработку (например, со статусом 'pending')
 }
 
-// pgxTaskRepository реализует TaskRepository с использованием pgx.
 type pgxTaskRepository struct {
 	pool *pgxpool.Pool
 	log  *zap.Logger
 }
 
-// NewPgxTaskRepository создает новый экземпляр pgxTaskRepository.
 func NewPgxTaskRepository(pool *pgxpool.Pool, log *zap.Logger) TaskRepository {
 	return &pgxTaskRepository{pool: pool, log: log}
 }
 
-// CreateTask создает новую задачу со статусом 'pending'.
 func (r *pgxTaskRepository) CreateTask(ctx context.Context, userID uuid.UUID, expression string) (uuid.UUID, error) {
 	query := `
         INSERT INTO tasks (user_id, expression, status)
@@ -76,52 +62,115 @@ func (r *pgxTaskRepository) CreateTask(ctx context.Context, userID uuid.UUID, ex
 	var taskID uuid.UUID
 	err := r.pool.QueryRow(ctx, query, userID, expression, StatusPending).Scan(&taskID)
 	if err != nil {
-		// TODO: Обработать возможную ошибку нарушения FOREIGN KEY (если user_id не существует)
 		r.log.Error("Не удалось создать задачу в БД",
-			zap.String("userID", userID.String()),
+			zap.Stringer("userID", userID), // Используем Stringer для UUID
 			zap.String("expression", expression),
 			zap.Error(err),
 		)
 		return uuid.Nil, fmt.Errorf("%w: не удалось вставить задачу: %v", ErrDatabase, err)
 	}
 	r.log.Info("Задача успешно создана в БД",
-		zap.String("taskID", taskID.String()),
-		zap.String("userID", userID.String()),
+		zap.Stringer("taskID", taskID),
+		zap.Stringer("userID", userID),
 	)
 	return taskID, nil
 }
 
-// GetTaskByID (Заглушка, реализуем позже для GET /tasks/{id})
 func (r *pgxTaskRepository) GetTaskByID(ctx context.Context, taskID uuid.UUID) (*Task, error) {
-    r.log.Warn("Метод GetTaskByID еще не реализован", zap.String("taskID", taskID.String()))
-    // TODO: Реализовать запрос SELECT ... WHERE id = $1
-    return nil, errors.New("метод GetTaskByID не реализован")
+	query := `
+        SELECT id, user_id, expression, status, result, error_message, created_at, updated_at
+        FROM tasks
+        WHERE id = $1
+    `
+	var t Task
+	err := r.pool.QueryRow(ctx, query, taskID).Scan(
+		&t.ID, &t.UserID, &t.Expression, &t.Status,
+		&t.Result, &t.ErrorMessage, &t.CreatedAt, &t.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrTaskNotFound
+		}
+		r.log.Error("Ошибка получения задачи по ID из БД", zap.Stringer("taskID", taskID), zap.Error(err))
+		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+	return &t, nil
 }
 
-// GetTasksByUserID (Заглушка, реализуем позже для GET /tasks)
-func (r *pgxTaskRepository) GetTasksByUserID(ctx context.Context, userID uuid.UUID) ([]Task, error) {
-    r.log.Warn("Метод GetTasksByUserID еще не реализован", zap.String("userID", userID.String()))
-    // TODO: Реализовать запрос SELECT ... WHERE user_id = $1 ORDER BY created_at DESC
-    return nil, errors.New("метод GetTasksByUserID не реализован")
+func (r *pgxTaskRepository) GetTasksByUserID(ctx context.Context, userID uuid.UUID /*, limit, offset int*/) ([]Task, error) {
+	// TODO: Добавить LIMIT и OFFSET для пагинации
+	query := `
+        SELECT id, user_id, expression, status, result, error_message, created_at, updated_at
+        FROM tasks
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+    `
+	rows, err := r.pool.Query(ctx, query, userID)
+	if err != nil {
+		r.log.Error("Ошибка получения задач по UserID из БД", zap.Stringer("userID", userID), zap.Error(err))
+		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var t Task
+		if err := rows.Scan(
+			&t.ID, &t.UserID, &t.Expression, &t.Status,
+			&t.Result, &t.ErrorMessage, &t.CreatedAt, &t.UpdatedAt,
+		); err != nil {
+			r.log.Error("Ошибка сканирования строки задачи", zap.Stringer("userID", userID), zap.Error(err))
+			return nil, fmt.Errorf("%w: ошибка сканирования: %v", ErrDatabase, err)
+		}
+		tasks = append(tasks, t)
+	}
+
+	if err = rows.Err(); err != nil {
+		r.log.Error("Ошибка после итерации по строкам задач", zap.Stringer("userID", userID), zap.Error(err))
+		return nil, fmt.Errorf("%w: ошибка итерации: %v", ErrDatabase, err)
+	}
+
+	return tasks, nil
 }
 
-// UpdateTaskStatus (Заглушка)
 func (r *pgxTaskRepository) UpdateTaskStatus(ctx context.Context, taskID uuid.UUID, status string) error {
-    r.log.Warn("Метод UpdateTaskStatus еще не реализован", zap.String("taskID", taskID.String()), zap.String("status", status))
-    // TODO: Реализовать UPDATE tasks SET status = $2, updated_at = NOW() WHERE id = $1
-    return errors.New("метод UpdateTaskStatus не реализован")
+	query := `UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2`
+	commandTag, err := r.pool.Exec(ctx, query, status, taskID)
+	if err != nil {
+		r.log.Error("Ошибка обновления статуса задачи", zap.Stringer("taskID", taskID), zap.String("status", status), zap.Error(err))
+		return fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return ErrTaskNotFound // Задача не найдена для обновления
+	}
+	r.log.Info("Статус задачи обновлен", zap.Stringer("taskID", taskID), zap.String("new_status", status))
+	return nil
 }
 
-// SetTaskResult (Заглушка)
 func (r *pgxTaskRepository) SetTaskResult(ctx context.Context, taskID uuid.UUID, result float64) error {
-    r.log.Warn("Метод SetTaskResult еще не реализован", zap.String("taskID", taskID.String()), zap.Float64("result", result))
-    // TODO: Реализовать UPDATE tasks SET status = $2, result = $3, error_message = NULL, updated_at = NOW() WHERE id = $1
-    return errors.New("метод SetTaskResult не реализован")
+	query := `UPDATE tasks SET status = $1, result = $2, error_message = NULL, updated_at = NOW() WHERE id = $3`
+	commandTag, err := r.pool.Exec(ctx, query, StatusCompleted, result, taskID)
+	if err != nil {
+		r.log.Error("Ошибка установки результата задачи", zap.Stringer("taskID", taskID), zap.Float64("result", result), zap.Error(err))
+		return fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return ErrTaskNotFound
+	}
+	r.log.Info("Результат задачи установлен", zap.Stringer("taskID", taskID), zap.Float64("result", result))
+	return nil
 }
 
-// SetTaskError (Заглушка)
 func (r *pgxTaskRepository) SetTaskError(ctx context.Context, taskID uuid.UUID, errorMessage string) error {
-    r.log.Warn("Метод SetTaskError еще не реализован", zap.String("taskID", taskID.String()), zap.String("error", errorMessage))
-    // TODO: Реализовать UPDATE tasks SET status = $2, error_message = $3, result = NULL, updated_at = NOW() WHERE id = $1
-    return errors.New("метод SetTaskError не реализован")
+	query := `UPDATE tasks SET status = $1, error_message = $2, result = NULL, updated_at = NOW() WHERE id = $3`
+	commandTag, err := r.pool.Exec(ctx, query, StatusFailed, errorMessage, taskID)
+	if err != nil {
+		r.log.Error("Ошибка установки ошибки задачи", zap.Stringer("taskID", taskID), zap.String("errorMessage", errorMessage), zap.Error(err))
+		return fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return ErrTaskNotFound
+	}
+	r.log.Info("Ошибка задачи установлена", zap.Stringer("taskID", taskID), zap.String("errorMessage", errorMessage))
+	return nil
 }

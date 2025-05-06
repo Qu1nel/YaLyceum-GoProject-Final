@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/repository"
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/service"
 	pb "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/orchestrator"
-	pb_worker "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/worker"
 
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/ast"
@@ -23,21 +23,23 @@ type OrchestratorServer struct {
 	pb.UnimplementedOrchestratorServiceServer
 	log         *zap.Logger
 	taskRepo    repository.TaskRepository
-    workerClient pb_worker.WorkerServiceClient 
+    evaluator   *service.ExpressionEvaluator
 }
 
 
 func NewOrchestratorServer(
     log *zap.Logger,
     taskRepo repository.TaskRepository,
-    workerClient pb_worker.WorkerServiceClient, // <-- Новая зависимость
+    evaluator *service.ExpressionEvaluator,
 ) *OrchestratorServer {
 	return &OrchestratorServer{
-		log:          log,
-		taskRepo:     taskRepo,
-        workerClient: workerClient, // <-- Сохранили зависимость
+		log:       log,
+		taskRepo:  taskRepo,
+        evaluator: evaluator, 
 	}
 }
+
+
 func (s *OrchestratorServer) SubmitExpression(ctx context.Context, req *pb.ExpressionRequest) (*pb.ExpressionResponse, error) {
 	userIDStr := req.GetUserId()
 	expression := req.GetExpression()
@@ -70,7 +72,7 @@ func (s *OrchestratorServer) SubmitExpression(ctx context.Context, req *pb.Expre
 		return nil, status.Errorf(codes.InvalidArgument, "ошибка в выражении: %s", compileErr.Error())
 	}
 	s.log.Info("Выражение успешно скомпилировано и распарсено в AST (expr)", zap.String("expression", expression))
-	astRootNode := program.Node // Получаем корневой узел AST
+	astRootNode := program.Node() // Получаем корневой узел AST
 
 	// === Шаг 2: Создание задачи в БД ===
 	taskID, err := s.taskRepo.CreateTask(ctx, userID, expression)
@@ -91,39 +93,78 @@ func (s *OrchestratorServer) SubmitExpression(ctx context.Context, req *pb.Expre
 		zap.Any("ast_root_type", fmt.Sprintf("%T", astRootNode)),
 	)
 
-	// go s.startEvaluation(taskID, astRootNode) // Запустим позже
+    // === АСИНХРОННЫЙ ЗАПУСК ВЫЧИСЛЕНИЯ ===
+    go s.startEvaluation(taskID, userID, expression, astRootNode)
 
 	// === Шаг 4: Возвращаем ID задачи Агенту ===
 	return &pb.ExpressionResponse{TaskId: taskID.String()}, nil
 }
 
-func (s *OrchestratorServer) startEvaluation(taskID uuid.UUID, rootNode ast.Node) {
-    // Создаем новый контекст для вычисления, возможно, с таймаутом
-    //evalCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute) // Пример таймаута
-    _, cancel := context.WithTimeout(context.Background(), 1*time.Minute) // Пример таймаута
+func (s *OrchestratorServer) startEvaluation(taskID uuid.UUID, userID uuid.UUID, originalExpr string, rootNode ast.Node) {
+    // Создаем новый контекст для этой задачи, независимый от gRPC запроса, но с таймаутом
+    // Таймаут на все вычисление задачи (например, 1 минута)
+    evalCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
     defer cancel()
 
-    s.log.Info("Запуск вычисления задачи в горутине", zap.String("taskID", taskID.String()))
+    s.log.Info("Запуск асинхронного вычисления задачи",
+        zap.Stringer("taskID", taskID),
+        zap.Stringer("userID", userID),
+        zap.String("expression", originalExpr),
+    )
 
     // 1. Обновить статус задачи на "processing"
-    // err := s.taskRepo.UpdateTaskStatus(evalCtx, taskID, repository.StatusProcessing)
-    // if err != nil { ... обработать ошибку обновления статуса ...; return }
+    err := s.taskRepo.UpdateTaskStatus(evalCtx, taskID, repository.StatusProcessing)
+    if err != nil {
+        s.log.Error("Не удалось обновить статус задачи на processing",
+            zap.Stringer("taskID", taskID),
+            zap.Error(err),
+        )
+        // Если не удалось даже обновить статус, дальнейшее вычисление бессмысленно,
+        // но ошибку уже записать некуда, кроме логов.
+        // Можно попытаться записать ошибку в задачу, но это может снова не удастся.
+        _ = s.taskRepo.SetTaskError(context.Background(), taskID, fmt.Sprintf("Внутренняя ошибка: не удалось начать обработку: %v", err))
+        return
+    }
 
     // 2. Вызвать рекурсивный вычислитель
-    // evaluator := NewExpressionEvaluator(s.log, s.workerClient) // Создать сервис-вычислитель
-    // result, evalErr := evaluator.Evaluate(evalCtx, rootNode)
+    s.log.Debug("Начало рекурсивного вычисления AST", zap.Stringer("taskID", taskID))
+    result, evalErr := s.evaluator.Evaluate(evalCtx, rootNode)
+    s.log.Debug("Рекурсивное вычисление AST завершено", zap.Stringer("taskID", taskID), zap.Error(evalErr))
+
 
     // 3. Обработать результат
-    // if evalErr != nil {
-    //    // Обновить статус на "failed", записать ошибку
-    //    s.taskRepo.SetTaskError(evalCtx, taskID, evalErr.Error())
-    // } else {
-    //    // Обновить статус на "completed", записать результат
-    //    s.taskRepo.SetTaskResult(evalCtx, taskID, result)
-    // }
-    s.log.Warn("Логика вычисления в startEvaluation еще не реализована", zap.String("taskID", taskID.String())) // Временный лог
+    if evalErr != nil {
+        s.log.Warn("Ошибка вычисления выражения для задачи",
+            zap.Stringer("taskID", taskID),
+            zap.Error(evalErr),
+        )
+        // Обновить статус на "failed", записать ошибку
+        // Используем новый фоновый контекст для обновления БД, т.к. evalCtx мог истечь
+        dbUpdateCtx, dbCancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer dbCancel()
+        if updateErr := s.taskRepo.SetTaskError(dbUpdateCtx, taskID, evalErr.Error()); updateErr != nil {
+            s.log.Error("Не удалось обновить задачу с ошибкой вычисления",
+                zap.Stringer("taskID", taskID),
+                zap.Error(updateErr),
+            )
+        }
+    } else {
+        s.log.Info("Выражение успешно вычислено для задачи",
+            zap.Stringer("taskID", taskID),
+            zap.Float64("result", result),
+        )
+        // Обновить статус на "completed", записать результат
+        dbUpdateCtx, dbCancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer dbCancel()
+        if updateErr := s.taskRepo.SetTaskResult(dbUpdateCtx, taskID, result); updateErr != nil {
+            s.log.Error("Не удалось обновить задачу с результатом вычисления",
+                zap.Stringer("taskID", taskID),
+                zap.Error(updateErr),
+            )
+        }
+    }
+    s.log.Info("Асинхронное вычисление задачи завершено", zap.Stringer("taskID", taskID))
 }
-
 
 // GetTaskDetails (Заглушка)
 func (s *OrchestratorServer) GetTaskDetails(ctx context.Context, req *pb.TaskDetailsRequest) (*pb.TaskDetailsResponse, error) {

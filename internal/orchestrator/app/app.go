@@ -12,6 +12,7 @@ import (
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/config"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/grpc_handler"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/repository"
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/service"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/logger"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/postgres"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/shutdown"
@@ -100,6 +101,8 @@ func Run() {
 
 			// 3.6 
 			client.NewWorkerServiceClient,
+
+			service.NewExpressionEvaluator,
 
             // 4. gRPC Хендлер (Сервер)
             // Теперь NewOrchestratorServer будет принимать TaskRepository
