@@ -16,7 +16,7 @@ import (
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/logger"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/postgres"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/shutdown"
-	pb "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/orchestrator"
+	pb_orchestrator "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/orchestrator"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/fx"
@@ -24,22 +24,22 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Адаптер для конфигурации клиента Воркера
 type workerClientConfigAdapter struct {
-    cfg *config.Config
+	cfg *config.Config
 }
 func (a *workerClientConfigAdapter) GetWorkerAddress() string {
-    return a.cfg.WorkerClient.WorkerAddress
+	return a.cfg.WorkerClient.WorkerAddress
 }
 func (a *workerClientConfigAdapter) GetGRPCClientTimeout() time.Duration {
-    return a.cfg.WorkerClient.Timeout
+	return a.cfg.WorkerClient.Timeout
 }
+
 
 // Run запускает приложение Оркестратор.
 func Run() {
 	appCtx, cancel := context.WithCancel(context.Background())
-	// defer cancel() // Управляется через Graceful
 
-	// Инициализация логгера (аналогично Agent)
 	tempCfg, err := config.Load()
 	var log *zap.Logger
 	if err != nil {
@@ -58,8 +58,9 @@ func Run() {
 		}
 	}()
 
+
 	fxApp := fx.New(
-		fx.Logger(NewFxLogger(log)), // Используем наш логгер для Fx
+		fx.Logger(NewFxLogger(log)),
 		fx.Provide(
 			// 1. Конфигурация
 			func() (*config.Config, error) {
@@ -70,15 +71,15 @@ func Run() {
 				}
 				return cfg, nil
 			},
-			// 1.5 Адаптер для клиентов Воркера
+			// Адаптер конфигурации для клиента Воркера
 			func(cfg *config.Config) client.WorkerClientConfigProvider {
-                return &workerClientConfigAdapter{cfg: cfg}
-            },
+				return &workerClientConfigAdapter{cfg: cfg}
+			},
 			// 2. Логгер
 			func() *zap.Logger {
 				return log
 			},
-			// 3. Пул соединений к БД (пока не используется хендлером, но нужен для запуска)
+			// 3. Пул соединений к БД
 			func(lc fx.Lifecycle, cfg *config.Config, log *zap.Logger) (*pgxpool.Pool, error) {
 				pool, err := postgres.NewPool(appCtx, cfg.Database.DSN, cfg.Database.PoolMaxConns, log)
 				if err != nil {
@@ -95,129 +96,98 @@ func Run() {
 				})
 				return pool, nil
 			},
-			// 3.5 Репозиторий Задач <-- Добавляем провайдер
-            // Fx передаст *pgxpool.Pool, *zap.Logger
-            repository.NewPgxTaskRepository,
 
-			// 3.6 
+			// 3.5 Репозиторий Задач
+			// *pgxpool.Pool реализует repository.DBPoolIface
+			func(pool *pgxpool.Pool, log *zap.Logger) repository.TaskRepository {
+				return repository.NewPgxTaskRepository(pool, log)
+			},
+
+			// 3.6 gRPC Клиент Воркера
 			client.NewWorkerServiceClient,
 
+			// Сервис Вычислений
 			service.NewExpressionEvaluator,
 
-            // 4. gRPC Хендлер (Сервер)
-            // Теперь NewOrchestratorServer будет принимать TaskRepository
-            grpc_handler.NewOrchestratorServer,
+			// 4. gRPC Хендлер (Сервер Оркестратора)
+			grpc_handler.NewOrchestratorServer,
 
-            // 5. gRPC Сервер (стандартный)
-            // Эта функция создает сам инстанс grpc.Server
-            func(log *zap.Logger) *grpc.Server {
-                 // Можно добавить опции, например, интерцепторы для логирования/метрик/panic recovery
-                 // unaryInterceptor := grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
-                 //     grpc_zap.UnaryServerInterceptor(log),
-                 //     // Добавить другие интерцепторы
-                 // ))
-                 // srv := grpc.NewServer(unaryInterceptor)
-                 srv := grpc.NewServer()
-                 log.Info("Создан инстанс gRPC сервера")
-                 return srv
-            },
-
-            // ... Добавить репозитории и сервисы позже ...
+			// 5. gRPC Сервер (стандартный)
+			func(log *zap.Logger) *grpc.Server {
+				srv := grpc.NewServer()
+				log.Info("Создан инстанс gRPC сервера")
+				return srv
+			},
 		),
 		fx.Invoke(func(lc fx.Lifecycle,
-            grpcServer *grpc.Server, // Запрашиваем инстанс gRPC сервера
-            orchestratorHandler *grpc_handler.OrchestratorServer, // Запрашиваем наш обработчик
-            cfg *config.Config,
-            log *zap.Logger,
-            pool *pgxpool.Pool, // Для Graceful Shutdown
-        ) {
-            // Регистрируем наш обработчик в gRPC сервере
-            pb.RegisterOrchestratorServiceServer(grpcServer, orchestratorHandler)
-            log.Info("gRPC обработчик Оркестратора зарегистрирован")
+			grpcServer *grpc.Server,
+			orchestratorHandler *grpc_handler.OrchestratorServer,
+			cfg *config.Config,
+			log *zap.Logger,
+			pool *pgxpool.Pool, // Для Graceful Shutdown
+		) {
+			pb_orchestrator.RegisterOrchestratorServiceServer(grpcServer, orchestratorHandler)
+			log.Info("gRPC обработчик Оркестратора зарегистрирован")
 
-            // Можно включить gRPC Reflection для дебаггинга (например, с grpcurl)
-            // reflection.Register(grpcServer)
-            // log.Info("gRPC Reflection зарегистрирован")
+			grpcAddr := ":" + cfg.GRPCServer.Port
+			listener, err := net.Listen("tcp", grpcAddr)
+			if err != nil {
+				log.Fatal("Не удалось начать слушать порт для gRPC", zap.String("адрес", grpcAddr), zap.Error(err))
+			}
 
-            // Определяем адрес для gRPC сервера
-            grpcAddr := ":" + cfg.GRPCServer.Port
+			lc.Append(fx.Hook{
+				OnStart: func(ctx context.Context) error {
+					log.Info("Запуск gRPC сервера Оркестратора", zap.String("адрес", grpcAddr))
+					go func() {
+						if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+							log.Fatal("gRPC сервер Оркестратора неожиданно завершил работу", zap.Error(err))
+							cancel()
+						}
+					}()
+					return nil
+				},
+				OnStop: func(ctx context.Context) error {
+					log.Info("Остановка gRPC сервера Оркестратора...")
+					grpcServer.GracefulStop()
+					log.Info("gRPC сервер Оркестратора успешно остановлен.")
+					return nil
+				},
+			})
 
-            // Создаем листенер для gRPC сервера
-            listener, err := net.Listen("tcp", grpcAddr)
-            if err != nil {
-                // Не смогли занять порт - фатальная ошибка
-                log.Fatal("Не удалось начать слушать порт для gRPC", zap.String("адрес", grpcAddr), zap.Error(err))
-            }
-
-            // Регистрируем хуки Fx Lifecycle для gRPC сервера
-            lc.Append(fx.Hook{
-                OnStart: func(ctx context.Context) error {
-                    log.Info("Запуск gRPC сервера Оркестратора", zap.String("адрес", grpcAddr))
-                    // Запускаем gRPC сервер в отдельной горутине
-                    go func() {
-                        if err := grpcServer.Serve(listener); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-                            log.Fatal("gRPC сервер Оркестратора неожиданно завершил работу", zap.Error(err))
-                            // Можно отменить главный контекст
-                            cancel()
-                        }
-                    }()
-                    return nil
-                },
-                OnStop: func(ctx context.Context) error {
-                    log.Info("Остановка gRPC сервера Оркестратора...")
-                    // Используем GracefulStop, он дождется завершения текущих запросов
-                    // (в пределах контекста/таймаута)
-                    grpcServer.GracefulStop()
-                    log.Info("gRPC сервер Оркестратора успешно остановлен.")
-                    // listener.Close() не нужен, Serve() его закроет
-                    return nil
-                },
-            })
-
-            // Запускаем Graceful Shutdown для Оркестратора
-            // Передаем функцию остановки gRPC сервера
-            serversToStop := map[string]func(context.Context) error{
-            	// Ключ может быть любым, используем "grpc" для ясности
-            	"grpc": func(ctx context.Context) error {
-            		// GracefulStop() сам обрабатывает контекст/таймаут,
-            		// но обернем на всякий случай
-                    done := make(chan struct{})
-                    go func() {
-                        grpcServer.GracefulStop()
-                        close(done)
-                    }()
-                    select {
-                    case <-done:
-                       return nil // Успешно остановлен
-                    case <-ctx.Done():
-                       log.Error("Таймаут при остановке gRPC сервера", zap.Error(ctx.Err()))
-                       grpcServer.Stop() // Принудительная остановка, если таймаут истек
-                       return ctx.Err()
-                    }
-            	},
-            }
-            go shutdown.Graceful(appCtx, cancel, log, cfg.GracefulTimeout, serversToStop, pool)
-        }),
+			serversToStop := map[string]func(context.Context) error{
+				"grpc": func(ctx context.Context) error {
+					done := make(chan struct{})
+					go func() {
+						grpcServer.GracefulStop()
+						close(done)
+					}()
+					select {
+					case <-done:
+						return nil
+					case <-ctx.Done():
+						log.Error("Таймаут при остановке gRPC сервера", zap.Error(ctx.Err()))
+						grpcServer.Stop()
+						return ctx.Err()
+					}
+				},
+			}
+			go shutdown.Graceful(appCtx, cancel, log, cfg.GracefulTimeout, serversToStop, pool)
+		}),
 	)
 
-	// Запуск Fx приложения
 	if err := fxApp.Start(appCtx); err != nil {
 		log.Error("Не удалось запустить Fx приложение Оркестратора", zap.Error(err))
 		os.Exit(1)
 	}
-
 	<-fxApp.Done()
-
 	stopErr := fxApp.Err()
 	if stopErr != nil && !errors.Is(stopErr, context.Canceled) {
 		log.Error("Fx приложение Оркестратора завершилось с ошибкой во время остановки", zap.Error(stopErr))
 		os.Exit(1)
 	}
-
 	log.Info("Сервис Оркестратор успешно завершил работу.")
 }
 
-// FxLogger (можно скопировать из Agent или вынести в общий пакет)
 type FxLogger struct {
 	log *zap.Logger
 }
