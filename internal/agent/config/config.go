@@ -2,20 +2,23 @@ package config
 
 import (
 	"fmt"
+	"log" // Используем стандартный log для Printf, если zap еще не инициализирован
+	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
+	// mapstructure нужен, если будем парсить time.Duration из строк для JWT_TOKEN_TTL, но viper может справиться и сам
+	// "github.com/mitchellh/mapstructure"
 )
 
-
 type Config struct {
-	AppEnv          string         `mapstructure:"APP_ENV"`
-	Server          ServerConfig   `mapstructure:",squash"`
-	Database        DatabaseConfig `mapstructure:",squash"`
-	JWT             JWTConfig      `mapstructure:",squash"`
-	Logger          LoggerConfig   `mapstructure:",squash"`
-	GracefulTimeout time.Duration  `mapstructure:"GRACEFUL_TIMEOUT"`
+	AppEnv             string           `mapstructure:"APP_ENV"`
+	Server             ServerConfig     `mapstructure:",squash"`
+	Database           DatabaseConfig   `mapstructure:",squash"`
+	JWT                JWTConfig        `mapstructure:",squash"`
+	Logger             LoggerConfig     `mapstructure:",squash"`
+	GracefulTimeout    time.Duration    `mapstructure:"GRACEFUL_TIMEOUT"`
 	OrchestratorClient GRPCClientConfig `mapstructure:",squash"`
 }
 
@@ -37,55 +40,84 @@ type LoggerConfig struct {
 	Level string `mapstructure:"LOG_LEVEL"`
 }
 
-// GRPCClientConfig содержит конфигурацию для gRPC клиента.
 type GRPCClientConfig struct {
 	OrchestratorAddress string        `mapstructure:"ORCHESTRATOR_GRPC_ADDRESS"`
 	Timeout             time.Duration `mapstructure:"GRPC_CLIENT_TIMEOUT"`
-    // Можно добавить Retry, Keepalive параметры позже
 }
 
 func Load() (*Config, error) {
-	viper.SetDefault("APP_ENV", "development")
-	viper.SetDefault("AGENT_HTTP_PORT", "8080")
-	viper.SetDefault("POSTGRES_DSN", "postgres://user:password@localhost:5432/calculator_db?sslmode=disable")
-	viper.SetDefault("JWT_SECRET", "default-secret-key-please-change")
-	viper.SetDefault("LOG_LEVEL", "info")
-	viper.SetDefault("DB_POOL_MAX_CONNS", 10)
-	viper.SetDefault("GRACEFUL_TIMEOUT", 5*time.Second)
-	viper.SetDefault("JWT_TOKEN_TTL", "1h") // TTL (1 час)
-	viper.SetDefault("ORCHESTRATOR_GRPC_ADDRESS", "orchestrator:50051") // Адрес по умолчанию (имя сервиса в Docker Compose и порт)
-	viper.SetDefault("GRPC_CLIENT_TIMEOUT", "5s")
+	v := viper.New()
 
-	viper.AutomaticEnv()
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	viper.AllowEmptyEnv(true)
+	// 1. Устанавливаем Replacer
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	viper.SetConfigName(".env")
-	viper.SetConfigType("env")
-	viper.AddConfigPath(".")
-	_ = viper.ReadInConfig()
+	// 2. Читаем переменные окружения СРАЗУ
+	v.AutomaticEnv()
+
+	// 3. Устанавливаем значения по умолчанию
+	// Эти значения будут использованы, ТОЛЬКО если соответствующая переменная окружения не установлена.
+	v.SetDefault("APP_ENV", "development")
+	v.SetDefault("LOG_LEVEL", "info")
+	v.SetDefault("GRACEFUL_TIMEOUT", "5s") // Viper умеет парсить Duration из строки
+	v.SetDefault("POSTGRES_DSN", "postgres://user_default:pass_default@postgres_host_default:5432/db_default?sslmode=disable")
+	v.SetDefault("DB_POOL_MAX_CONNS", 10)
+
+	v.SetDefault("AGENT_HTTP_PORT", "8080")
+	v.SetDefault("JWT_SECRET", "default_jwt_secret_please_change_32_chars_long") // Длинный дефолт
+	v.SetDefault("JWT_TOKEN_TTL", "1h")    // Viper умеет парсить Duration из строки
+	v.SetDefault("ORCHESTRATOR_GRPC_ADDRESS", "orchestrator_default:50051")
+	v.SetDefault("GRPC_CLIENT_TIMEOUT", "5s") // Viper умеет парсить Duration из строки
+
+	// 4. НЕ ЧИТАЕМ файл .env, если APP_ENV (прочитанный из os.Getenv) равен "test".
+	// В TestMain мы устанавливаем APP_ENV="test" через os.Setenv.
+	if appEnv := os.Getenv("APP_ENV"); appEnv != "test" {
+		v.SetConfigName(".env")
+		v.SetConfigType("env")
+		v.AddConfigPath(".")
+		if err := v.ReadInConfig(); err != nil {
+			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+				log.Println("Файл .env не найден, используются переменные окружения/дефолты.")
+			} else {
+				log.Printf("Предупреждение: ошибка чтения файла .env: %v (игнорируется)", err)
+			}
+		} else {
+			log.Printf("Конфигурация Агента загружена из файла .env (APP_ENV=%s)", appEnv)
+		}
+	} else {
+		log.Println("APP_ENV=test (Агент), файл .env не читается.")
+	}
 
 	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
-		return nil, fmt.Errorf("ошибка разбора конфигурации: %w", err)
+	// Viper v1.7.0+ умеет парсить time.Duration из строк (например, "1h", "5s") без хуков,
+	// если поля в структуре имеют тип time.Duration.
+	if err := v.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("ошибка разбора конфигурации Агента: %w", err)
 	}
 
-	if cfg.JWT.Secret == "default-secret-key-please-change" || len(cfg.JWT.Secret) < 32 {
-        if cfg.AppEnv != "production" {
-            fmt.Println("ПРЕДУПРЕЖДЕНИЕ: JWT_SECRET не установлен или слишком короткий. Используется значение по умолчанию. НЕ ДЛЯ PRODUCTION!")
+	// Валидация
+	if cfg.Server.Port == "" {
+		return nil, fmt.Errorf("AGENT_HTTP_PORT (из env или default) не установлен")
+	}
+	if cfg.Database.DSN == "" || (os.Getenv("APP_ENV") == "test" && cfg.Database.DSN == v.GetString("POSTGRES_DSN") && os.Getenv("POSTGRES_DSN") != cfg.Database.DSN ) {
+		// Если в тестах DSN остался дефолтным, а os.Setenv должен был его переопределить.
+		return nil, fmt.Errorf("POSTGRES_DSN для Агента не установлен или равен дефолтному в тесте (текущий: '%s', ожидался из env: '%s')", cfg.Database.DSN, os.Getenv("POSTGRES_DSN"))
+	}
+	if cfg.JWT.Secret == "" || (len(cfg.JWT.Secret) < 32 && cfg.AppEnv != "test") { // В тестах секрет может быть короче, если мы его явно задаем
+        if cfg.JWT.Secret == v.GetString("JWT_SECRET") && os.Getenv("APP_ENV") == "test" && os.Getenv("JWT_SECRET") != cfg.JWT.Secret {
+             return nil, fmt.Errorf("JWT_SECRET для Агента не установлен или равен дефолтному в тесте (текущий: '%s', ожидался из env: '%s')", cfg.JWT.Secret, os.Getenv("JWT_SECRET"))
+        }
+        if len(cfg.JWT.Secret) < 32 && cfg.AppEnv != "test"{
+            return nil, fmt.Errorf("JWT_SECRET должен быть не менее 32 символов (текущая длина: %d)", len(cfg.JWT.Secret))
         }
 	}
-	if cfg.Database.DSN == "" {
-		return nil, fmt.Errorf("переменная окружения POSTGRES_DSN должна быть установлена")
-	}
     if cfg.JWT.TokenTTL <= 0 {
-        return nil, fmt.Errorf("переменная окружения JWT_TOKEN_TTL должна быть установлена и быть положительной длительностью (например, 1h, 15m)")
+        return nil, fmt.Errorf("JWT_TOKEN_TTL должен быть положительной длительностью")
     }
-	if cfg.OrchestratorClient.OrchestratorAddress == "" {
-		return nil, fmt.Errorf("переменная окружения ORCHESTRATOR_GRPC_ADDRESS должна быть установлена")
+	if cfg.OrchestratorClient.OrchestratorAddress == "" || (os.Getenv("APP_ENV") == "test" && cfg.OrchestratorClient.OrchestratorAddress == v.GetString("ORCHESTRATOR_GRPC_ADDRESS") && os.Getenv("ORCHESTRATOR_GRPC_ADDRESS") != cfg.OrchestratorClient.OrchestratorAddress) {
+		return nil, fmt.Errorf("ORCHESTRATOR_GRPC_ADDRESS для Агента не установлен или равен дефолтному в тесте (текущий: '%s', ожидался из env: '%s')", cfg.OrchestratorClient.OrchestratorAddress, os.Getenv("ORCHESTRATOR_GRPC_ADDRESS"))
 	}
     if cfg.OrchestratorClient.Timeout <= 0 {
-        return nil, fmt.Errorf("GRPC_CLIENT_TIMEOUT должен быть положительной длительностью")
+        return nil, fmt.Errorf("GRPC_CLIENT_TIMEOUT для клиента Оркестратора должен быть положительным")
     }
 
 	return &cfg, nil

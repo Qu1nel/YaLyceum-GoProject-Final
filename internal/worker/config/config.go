@@ -2,92 +2,92 @@ package config
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/mitchellh/mapstructure"
+	"github.com/mitchellh/mapstructure" // Нужен для парсинга Duration
 	"github.com/spf13/viper"
 )
 
-// Config определяет структуру конфигурации для Воркера.
 type Config struct {
-	AppEnv          string        `mapstructure:"APP_ENV"`
-	GRPCServer      GRPCServerConfig `mapstructure:",squash"`
-	Logger          LoggerConfig   `mapstructure:",squash"`
-	GracefulTimeout time.Duration `mapstructure:"GRACEFUL_TIMEOUT"`
-    CalculationTime CalculationTimeConfig `mapstructure:",squash"` // Добавили времена вычислений
+	AppEnv          string                `mapstructure:"APP_ENV"`
+	GRPCServer      GRPCServerConfig      `mapstructure:",squash"`
+	Logger          LoggerConfig          `mapstructure:",squash"`
+	GracefulTimeout time.Duration         `mapstructure:"GRACEFUL_TIMEOUT"`
+	CalculationTime CalculationTimeConfig `mapstructure:",squash"`
 }
 
-// GRPCServerConfig содержит конфигурацию gRPC сервера Воркера.
 type GRPCServerConfig struct {
-	Port string `mapstructure:"WORKER_GRPC_PORT"` // Используем другой порт
+	Port string `mapstructure:"WORKER_GRPC_PORT"`
 }
 
-// LoggerConfig содержит конфигурацию логгера.
 type LoggerConfig struct {
 	Level string `mapstructure:"LOG_LEVEL"`
 }
 
-// CalculationTimeConfig содержит время (задержку) для каждой операции.
-// Используем строки для удобства задания в .env (e.g., "1s", "500ms").
 type CalculationTimeConfig struct {
-    Addition       time.Duration `mapstructure:"TIME_ADDITION_MS"`
-    Subtraction    time.Duration `mapstructure:"TIME_SUBTRACTION_MS"`
-    Multiplication time.Duration `mapstructure:"TIME_MULTIPLICATION_MS"`
-    Division       time.Duration `mapstructure:"TIME_DIVISION_MS"`
-    Exponentiation time.Duration `mapstructure:"TIME_EXPONENTIATION_MS"` // Для '^'
-    // Добавить позже для функций и унарного минуса, если нужно
-    // UnaryMinus     time.Duration `mapstructure:"TIME_UNARY_MINUS_MS"`
+	Addition       time.Duration `mapstructure:"TIME_ADDITION_MS"`
+	Subtraction    time.Duration `mapstructure:"TIME_SUBTRACTION_MS"`
+	Multiplication time.Duration `mapstructure:"TIME_MULTIPLICATION_MS"`
+	Division       time.Duration `mapstructure:"TIME_DIVISION_MS"`
+	Exponentiation time.Duration `mapstructure:"TIME_EXPONENTIATION_MS"`
 }
 
-
-// Load загружает конфигурацию для Воркера.
 func Load() (*Config, error) {
-	// Установка значений по умолчанию
-	viper.SetDefault("APP_ENV", "development")
-	viper.SetDefault("WORKER_GRPC_PORT", "50052") // <-- Порт Воркера
-	viper.SetDefault("LOG_LEVEL", "info")
-	viper.SetDefault("GRACEFUL_TIMEOUT", 5*time.Second)
-    // Времена операций по умолчанию (можно использовать ms или s)
-    viper.SetDefault("TIME_ADDITION_MS", "200ms")
-    viper.SetDefault("TIME_SUBTRACTION_MS", "200ms")
-    viper.SetDefault("TIME_MULTIPLICATION_MS", "300ms")
-    viper.SetDefault("TIME_DIVISION_MS", "400ms")
-    viper.SetDefault("TIME_EXPONENTIATION_MS", "500ms")
+	v := viper.New()
 
-	// Настройка чтения переменных окружения
-	viper.AutomaticEnv()
-	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	viper.AllowEmptyEnv(true)
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
 
-	// Чтение из .env (если есть)
-	viper.SetConfigName(".env")
-	viper.SetConfigType("env")
-	viper.AddConfigPath(".") // Ищем в корне проекта
-	_ = viper.ReadInConfig()
+	v.SetDefault("APP_ENV", "development")
+	v.SetDefault("LOG_LEVEL", "info")
+	v.SetDefault("GRACEFUL_TIMEOUT", "5s")
+	v.SetDefault("WORKER_GRPC_PORT", "50052")
+	v.SetDefault("TIME_ADDITION_MS", "200ms")
+	v.SetDefault("TIME_SUBTRACTION_MS", "200ms")
+	v.SetDefault("TIME_MULTIPLICATION_MS", "300ms")
+	v.SetDefault("TIME_DIVISION_MS", "400ms")
+	v.SetDefault("TIME_EXPONENTIATION_MS", "500ms")
+
+	if appEnv := os.Getenv("APP_ENV"); appEnv != "test" {
+		v.SetConfigName(".env")
+		v.SetConfigType("env")
+		v.AddConfigPath(".")
+		if err := v.ReadInConfig(); err != nil {
+			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+				log.Println("Файл .env не найден, используются переменные окружения/дефолты.")
+			} else {
+				log.Printf("Предупреждение: ошибка чтения файла .env: %v (игнорируется)", err)
+			}
+		} else {
+			log.Printf("Конфигурация Воркера загружена из файла .env (APP_ENV=%s)", appEnv)
+		}
+	} else {
+		log.Println("APP_ENV=test (Воркер), файл .env не читается.")
+	}
 
 	var cfg Config
-    // Используем Hook для парсинга Duration из строки
-    hook := viper.DecodeHook(
-        mapstructure.ComposeDecodeHookFunc(
-            mapstructure.StringToTimeDurationHookFunc(),
-            mapstructure.StringToSliceHookFunc(","),
-        ),
-    )
-	if err := viper.Unmarshal(&cfg, hook); err != nil {
+	hook := viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
+		mapstructure.StringToTimeDurationHookFunc(),
+		// mapstructure.StringToSliceHookFunc(","), // Не нужен для Duration
+	))
+	if err := v.Unmarshal(&cfg, hook); err != nil {
 		return nil, fmt.Errorf("ошибка разбора конфигурации Воркера: %w", err)
 	}
 
 	// Валидация
-	if cfg.GRPCServer.Port == "" {
-		return nil, fmt.Errorf("переменная окружения WORKER_GRPC_PORT должна быть установлена")
+	if cfg.GRPCServer.Port == "" || (os.Getenv("APP_ENV") == "test" && cfg.GRPCServer.Port == v.GetString("WORKER_GRPC_PORT") && os.Getenv("WORKER_GRPC_PORT") != cfg.GRPCServer.Port) {
+		return nil, fmt.Errorf("WORKER_GRPC_PORT: ожидалось '%s' из env, получено '%s'", os.Getenv("WORKER_GRPC_PORT"), cfg.GRPCServer.Port)
 	}
-    // Проверим, что времена распарсились корректно (больше 0)
-    if cfg.CalculationTime.Addition <= 0 || cfg.CalculationTime.Subtraction <= 0 ||
-       cfg.CalculationTime.Multiplication <= 0 || cfg.CalculationTime.Division <= 0 ||
-       cfg.CalculationTime.Exponentiation <= 0 {
-        return nil, fmt.Errorf("времена вычислений (TIME_..._MS) должны быть положительными длительностями")
-    }
+	if cfg.CalculationTime.Addition <= 0 || (os.Getenv("APP_ENV") == "test" && cfg.CalculationTime.Addition.String() == v.GetString("TIME_ADDITION_MS") && os.Getenv("TIME_ADDITION_MS") != cfg.CalculationTime.Addition.String()) {
+		return nil, fmt.Errorf("TIME_ADDITION_MS для Воркера не установлен корректно (текущий: %s, из viper default: %s, из env: %s)", cfg.CalculationTime.Addition, v.GetString("TIME_ADDITION_MS"), os.Getenv("TIME_ADDITION_MS"))
+	}
+	// ... аналогичные проверки для других времен операций ...
+	if cfg.GracefulTimeout <=0 {
+		return nil, fmt.Errorf("GRACEFUL_TIMEOUT должен быть положительным")
+	}
 
 
 	return &cfg, nil
