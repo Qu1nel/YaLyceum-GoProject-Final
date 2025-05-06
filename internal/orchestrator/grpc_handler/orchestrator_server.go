@@ -22,23 +22,23 @@ import (
 
 type OrchestratorServer struct {
 	pb.UnimplementedOrchestratorServiceServer
-	log         *zap.Logger
-	taskRepo    repository.TaskRepository
-    evaluator   *service.ExpressionEvaluator
+	log       *zap.Logger
+	taskRepo  repository.TaskRepository
+	evaluator service.Evaluator // <--- ИЗМЕНЕНО: используем интерфейс Evaluator
 }
 
-
 func NewOrchestratorServer(
-    log *zap.Logger,
-    taskRepo repository.TaskRepository,
-    evaluator *service.ExpressionEvaluator,
+	log *zap.Logger,
+	taskRepo repository.TaskRepository,
+	evaluator service.Evaluator, // <--- ИЗМЕНЕНО: принимаем интерфейс Evaluator
 ) *OrchestratorServer {
 	return &OrchestratorServer{
 		log:       log,
 		taskRepo:  taskRepo,
-        evaluator: evaluator, 
+		evaluator: evaluator,
 	}
 }
+
 
 
 func (s *OrchestratorServer) SubmitExpression(ctx context.Context, req *pb.ExpressionRequest) (*pb.ExpressionResponse, error) {
