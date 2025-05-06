@@ -17,6 +17,10 @@ var (
 	// Можно добавить другие ошибки (логарифм от отриц. числа и т.д.)
 )
 
+type Calculator interface {
+	Calculate(ctx context.Context, operation string, a, b float64) (float64, error)
+}
+
 // CalculatorService выполняет арифметические операции.
 type CalculatorService struct {
 	log  *zap.Logger
@@ -24,10 +28,10 @@ type CalculatorService struct {
 }
 
 // NewCalculatorService создает новый сервис вычислений.
-func NewCalculatorService(log *zap.Logger, cfg *config.Config) *CalculatorService {
+func NewCalculatorService(log *zap.Logger, cfg *config.Config) Calculator {
 	return &CalculatorService{
 		log: log,
-        cfg: &cfg.CalculationTime, // Передаем часть конфига со временами
+		cfg: &cfg.CalculationTime,
 	}
 }
 

@@ -15,11 +15,11 @@ import (
 type WorkerServer struct {
 	pb.UnimplementedWorkerServiceServer // Встраиваем для совместимости
 	log          *zap.Logger
-	calcService  *service.CalculatorService // Зависимость от сервиса вычислений
+	calcService  service.Calculator // Зависимость от сервиса вычислений
 }
 
 // NewWorkerServer создает новый gRPC сервер Воркера.
-func NewWorkerServer(log *zap.Logger, calcService *service.CalculatorService) *WorkerServer {
+func NewWorkerServer(log *zap.Logger, calcService service.Calculator) *WorkerServer { // <--- ИЗМЕНЕНО
 	return &WorkerServer{
 		log:         log,
 		calcService: calcService,
