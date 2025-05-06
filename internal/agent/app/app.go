@@ -161,6 +161,7 @@ func Run() {
 			// 6. Сервисы
 			// Fx передаст (UserRepository, PasswordHasher, *zap.Logger, *jwtauth.Manager).
 			service.NewAuthService,
+			service.NewTaskService,
 			// ... Добавить TaskService позже ...
 
 			// 7. Хендлеры

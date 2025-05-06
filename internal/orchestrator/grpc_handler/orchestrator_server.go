@@ -17,6 +17,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type OrchestratorServer struct {
@@ -166,14 +167,97 @@ func (s *OrchestratorServer) startEvaluation(taskID uuid.UUID, userID uuid.UUID,
     s.log.Info("Асинхронное вычисление задачи завершено", zap.Stringer("taskID", taskID))
 }
 
-// GetTaskDetails (Заглушка)
+// GetTaskDetails получает детали конкретной задачи для пользователя.
 func (s *OrchestratorServer) GetTaskDetails(ctx context.Context, req *pb.TaskDetailsRequest) (*pb.TaskDetailsResponse, error) {
-    s.log.Warn("Метод GetTaskDetails еще не реализован", zap.String("userID", req.GetUserId()), zap.String("taskID", req.GetTaskId()))
-    return nil, status.Errorf(codes.Unimplemented, "метод GetTaskDetails не реализован")
+	taskIDStr := req.GetTaskId()
+	requestingUserIDStr := req.GetUserId() // UserID из JWT, кто запрашивает
+
+	s.log.Info("Получен gRPC запрос GetTaskDetails",
+		zap.String("taskID", taskIDStr),
+		zap.String("requestingUserID", requestingUserIDStr),
+	)
+
+	// Валидация ID
+	taskID, err := uuid.Parse(taskIDStr)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "невалидный формат taskID: %v", err)
+	}
+	requestingUserID, err := uuid.Parse(requestingUserIDStr)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "невалидный формат userID в запросе: %v", err)
+	}
+
+	// Получаем задачу из репозитория
+	task, err := s.taskRepo.GetTaskByID(ctx, taskID)
+	if err != nil {
+		if errors.Is(err, repository.ErrTaskNotFound) {
+			s.log.Warn("Задача не найдена для GetTaskDetails", zap.Stringer("taskID", taskID))
+			return nil, status.Errorf(codes.NotFound, "задача с ID %s не найдена", taskIDStr)
+		}
+		s.log.Error("Ошибка получения задачи из репозитория для GetTaskDetails", zap.Stringer("taskID", taskID), zap.Error(err))
+		return nil, status.Error(codes.Internal, "внутренняя ошибка сервера")
+	}
+
+	// ПРОВЕРКА ПРАВ: Убеждаемся, что запрашивающий пользователь является владельцем задачи
+	if task.UserID != requestingUserID {
+		s.log.Warn("Попытка доступа к чужой задаче",
+			zap.Stringer("taskID", taskID),
+			zap.Stringer("taskOwnerUserID", task.UserID),
+			zap.Stringer("requestingUserID", requestingUserID),
+		)
+		// Возвращаем NotFound, чтобы не раскрывать существование задачи другому пользователю,
+		// либо PermissionDenied/Unauthenticated, если хотим явно указать на проблему с правами.
+		// NotFound более безопасен.
+		return nil, status.Errorf(codes.NotFound, "задача с ID %s не найдена (или нет прав доступа)", taskIDStr)
+	}
+
+	// Преобразуем задачу из репозитория в gRPC ответ
+	response := &pb.TaskDetailsResponse{
+		Id:         task.ID.String(),
+		Expression: task.Expression,
+		Status:     task.Status,
+		CreatedAt:  timestamppb.New(task.CreatedAt).AsTime().Format(time.RFC3339Nano), // Используем RFC3339Nano для единообразия
+		UpdatedAt:  timestamppb.New(task.UpdatedAt).AsTime().Format(time.RFC3339Nano),
+	}
+	if task.Result != nil {
+		response.Result = *task.Result
+	}
+	if task.ErrorMessage != nil {
+		response.ErrorMessage = *task.ErrorMessage
+	}
+
+	return response, nil
 }
 
-// ListUserTasks (Заглушка)
+// ListUserTasks получает список задач для указанного пользователя.
 func (s *OrchestratorServer) ListUserTasks(ctx context.Context, req *pb.UserTasksRequest) (*pb.UserTasksResponse, error) {
-    s.log.Warn("Метод ListUserTasks еще не реализован", zap.String("userID", req.GetUserId()))
-    return nil, status.Errorf(codes.Unimplemented, "метод ListUserTasks не реализован")
+	userIDStr := req.GetUserId()
+	s.log.Info("Получен gRPC запрос ListUserTasks", zap.String("userID", userIDStr))
+
+	// Валидация UserID
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "невалидный формат userID: %v", err)
+	}
+
+	// Получаем задачи из репозитория
+	// TODO: Добавить пагинацию (limit, offset) из req, когда она будет в .proto и TaskRepository
+	tasks, err := s.taskRepo.GetTasksByUserID(ctx, userID)
+	if err != nil {
+		s.log.Error("Ошибка получения списка задач из репозитория для ListUserTasks", zap.Stringer("userID", userID), zap.Error(err))
+		return nil, status.Error(codes.Internal, "внутренняя ошибка сервера")
+	}
+
+	// Преобразуем задачи в формат gRPC ответа
+	pbTasks := make([]*pb.TaskBrief, 0, len(tasks))
+	for _, task := range tasks {
+		pbTasks = append(pbTasks, &pb.TaskBrief{
+			Id:         task.ID.String(),
+			Expression: task.Expression,
+			Status:     task.Status,
+			CreatedAt:  timestamppb.New(task.CreatedAt).AsTime().Format(time.RFC3339Nano),
+		})
+	}
+
+	return &pb.UserTasksResponse{Tasks: pbTasks}, nil
 }

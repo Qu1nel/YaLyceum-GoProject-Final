@@ -1,18 +1,15 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
-	"time"
 
-	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/config"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/middleware"
-	pb "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/orchestrator"
-
-	"context"
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/service"
+	"github.com/google/uuid"
 
 	"github.com/labstack/echo/v4"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/status"
 )
 
 type CalculateRequest struct {
@@ -24,22 +21,18 @@ type CalculateResponse struct {
 }
 
 type TaskHandler struct {
-	log               *zap.Logger
-	orchestratorClient pb.OrchestratorServiceClient // gRPC клиент
-	grpcClientTimeout time.Duration                // Таймаут для gRPC вызовов
+	log         *zap.Logger
+	taskService service.TaskService // <-- Зависимость от сервиса задач
 }
 
 
-// NewTaskHandler теперь принимает OrchestratorServiceClient и конфигурацию.
 func NewTaskHandler(
 	log *zap.Logger,
-	orcClient pb.OrchestratorServiceClient,
-	cfg *config.Config, // Получаем весь конфиг, чтобы взять таймаут
+	taskService service.TaskService, // <-- Новая зависимость
 ) *TaskHandler {
 	return &TaskHandler{
-		log:                log,
-		orchestratorClient: orcClient,
-		grpcClientTimeout:  cfg.OrchestratorClient.Timeout, // Берем таймаут из конфига
+		log:         log,
+		taskService: taskService,
 	}
 }
 
@@ -86,41 +79,91 @@ func (h *TaskHandler) Calculate(c echo.Context) error {
 		zap.String("expression", req.Expression),
 	)
 
-	// Создаем контекст с таймаутом для gRPC вызова
-	ctx, cancel := context.WithTimeout(c.Request().Context(), h.grpcClientTimeout)
-	defer cancel()
-
-	// Вызов gRPC метода Оркестратора
-	grpcReq := &pb.ExpressionRequest{
-		UserId:     userID,
-		Expression: req.Expression,
-	}
-
-	grpcRes, err := h.orchestratorClient.SubmitExpression(ctx, grpcReq)
+	taskID, err := h.taskService.SubmitNewTask(c.Request().Context(), userID, req.Expression)
 	if err != nil {
-		h.log.Error("Ошибка при вызове gRPC SubmitExpression Оркестратора",
-			zap.String("userID", userID),
-			zap.String("expression", req.Expression),
-			zap.Error(err),
-		)
-		// Преобразуем gRPC ошибку в HTTP ошибку
-		st, _ := status.FromError(err) // Игнорируем ok, т.к. даже если это не gRPC ошибка, код будет Unknown
-		// Можно добавить более детальную обработку кодов gRPC (Unavailable, DeadlineExceeded и т.д.)
-		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Ошибка взаимодействия с сервисом вычислений: " + st.Message()})
+		h.log.Error("Ошибка от TaskService при SubmitNewTask", zap.Error(err), zap.String("userID", userID))
+		// Здесь можно добавить более специфичную обработку ошибок от сервиса, если нужно
+		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()}) // Передаем ошибку от сервиса
 	}
 
-	h.log.Info("Выражение успешно отправлено в Оркестратор",
-		zap.String("userID", userID),
-		zap.String("expression", req.Expression),
-		zap.String("returned_task_id", grpcRes.GetTaskId()),
-	)
+	h.log.Info("Задача успешно принята к обработке", zap.String("taskID", taskID), zap.String("userID", userID))
 
-	return c.JSON(http.StatusAccepted, CalculateResponse{TaskID: grpcRes.GetTaskId()})
+	return c.JSON(http.StatusAccepted, CalculateResponse{TaskID: taskID})
 }
 
-// RegisterRoutes регистрирует маршруты для задач в защищенной группе.
+// GetTasks godoc
+// @Summary Получить список задач пользователя
+// @Description Возвращает список всех задач, созданных текущим аутентифицированным пользователем.
+// @Tags Tasks
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} service.TaskListItem "Список задач"
+// @Failure 401 {object} ErrorResponse "Ошибка аутентификации"
+// @Failure 500 {object} ErrorResponse "Внутренняя ошибка сервера"
+// @Router /api/v1/tasks [get]
+func (h *TaskHandler) GetTasks(c echo.Context) error {
+    userID, ok := middleware.GetUserIDFromContext(c)
+    if !ok {
+        h.log.Error("Не удалось получить UserID из контекста в /tasks")
+        return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Внутренняя ошибка сервера"})
+    }
+
+    h.log.Info("Запрос списка задач для пользователя", zap.String("userID", userID))
+    tasks, err := h.taskService.GetUserTasks(c.Request().Context(), userID)
+    if err != nil {
+        h.log.Error("Ошибка от TaskService при GetUserTasks", zap.Error(err), zap.String("userID", userID))
+        return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+    }
+
+    if tasks == nil { // Сервис может вернуть nil, если задач нет (или []TaskListItem{})
+        tasks = []service.TaskListItem{} // Возвращаем пустой массив JSON, а не null
+    }
+
+    return c.JSON(http.StatusOK, tasks)
+}
+
+// GetTaskByID godoc
+// @Summary Получить детали конкретной задачи
+// @Description Возвращает детали задачи по её ID, если она принадлежит текущему пользователю.
+// @Tags Tasks
+// @Security BearerAuth
+// @Produce json
+// @Param id path string true "ID Задачи (UUID)"
+// @Success 200 {object} service.TaskDetails "Детали задачи"
+// @Failure 400 {object} ErrorResponse "Невалидный ID задачи"
+// @Failure 401 {object} ErrorResponse "Ошибка аутентификации"
+// @Failure 404 {object} ErrorResponse "Задача не найдена или нет прав доступа"
+// @Failure 500 {object} ErrorResponse "Внутренняя ошибка сервера"
+// @Router /api/v1/tasks/{id} [get]
+func (h *TaskHandler) GetTaskByID(c echo.Context) error {
+    userID, ok := middleware.GetUserIDFromContext(c)
+    if !ok {
+        h.log.Error("Не удалось получить UserID из контекста в /tasks/{id}")
+        return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Внутренняя ошибка сервера"})
+    }
+
+    taskIDStr := c.Param("id")
+    if _, err := uuid.Parse(taskIDStr); err != nil { // Валидация формата UUID
+        return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Невалидный формат ID задачи"})
+    }
+
+    h.log.Info("Запрос деталей задачи", zap.String("userID", userID), zap.String("taskID", taskIDStr))
+    taskDetails, err := h.taskService.GetTaskDetails(c.Request().Context(), userID, taskIDStr)
+    if err != nil {
+        h.log.Error("Ошибка от TaskService при GetTaskDetails", zap.Error(err), zap.String("userID", userID), zap.String("taskID", taskIDStr))
+        if errors.Is(err, service.ErrTaskNotFound) { // Проверяем нашу кастомную ошибку
+            return c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
+        }
+        return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+    }
+
+    return c.JSON(http.StatusOK, taskDetails)
+}
+
+
+// RegisterRoutes теперь регистрирует все маршруты для задач.
 func (h *TaskHandler) RegisterRoutes(protectedGroup *echo.Group) {
 	protectedGroup.POST("/calculate", h.Calculate)
-	// protectedGroup.GET("/tasks", h.GetTasks)
-	// protectedGroup.GET("/tasks/:id", h.GetTaskByID)
+	protectedGroup.GET("/tasks", h.GetTasks)
+	protectedGroup.GET("/tasks/:id", h.GetTaskByID)
 }
