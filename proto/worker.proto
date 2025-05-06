@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package worker;
+
+option go_package = "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/worker;worker_grpc";
+
+// Сервис Воркера
+service WorkerService {
+  // Выполняет одну арифметическую операцию
+  rpc ProcessSubTask(SubTaskRequest) returns (SubTaskResponse);
+}
+
+// Запрос на выполнение подзадачи (операции)
+message SubTaskRequest {
+  string operation_id = 1; // ID операции (для отслеживания)
+  string operation_type = 2; // Тип операции (+, -, *, /, ^, sqrt, log)
+  double operand1 = 3;
+  double operand2 = 4; // Может быть не использован для унарных операций
+  // Можно добавить другие поля, если необходимо
+}
+
+// Ответ с результатом подзадачи
+message SubTaskResponse {
+  string operation_id = 1;
+  double result = 2;
+  string error = 3; // Сообщение об ошибке, если была
+}

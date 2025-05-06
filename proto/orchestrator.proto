@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package orchestrator;
+
+option go_package = "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/orchestrator;orchestrator_grpc";
+
+// Сервис Оркестратора
+service OrchestratorService {
+  // Отправка выражения на вычисление (вызывается Агентом)
+  rpc SubmitExpression(ExpressionRequest) returns (ExpressionResponse);
+  // Получение статуса и результата задачи (вызывается Агентом) (TBD)
+  rpc GetTaskDetails(TaskDetailsRequest) returns (TaskDetailsResponse);
+  // Получение списка задач пользователя (вызывается Агентом) (TBD)
+  rpc ListUserTasks(UserTasksRequest) returns (UserTasksResponse);
+}
+
+// Запрос на вычисление
+message ExpressionRequest {
+  string user_id = 1; // ID пользователя из JWT
+  string expression = 2; // Математическое выражение
+}
+
+// Ответ с ID созданной задачи
+message ExpressionResponse {
+  string task_id = 1; // UUID созданной задачи
+}
+
+// Запрос деталей задачи
+message TaskDetailsRequest {
+  string user_id = 1; // ID пользователя (для проверки прав)
+  string task_id = 2; // ID запрашиваемой задачи
+}
+
+// Детали задачи (статус, результат/ошибка)
+message TaskDetailsResponse {
+  string id = 1;
+  string expression = 2;
+  string status = 3; // "pending", "processing", "completed", "failed"
+  double result = 4; // Результат, если статус "completed"
+  string error_message = 5; // Сообщение об ошибке, если статус "failed"
+  string created_at = 6; // Время создания (RFC3339)
+  string updated_at = 7; // Время последнего обновления (RFC3339)
+}
+
+ // Запрос списка задач пользователя
+message UserTasksRequest {
+    string user_id = 1; // ID пользователя, чьи задачи нужно получить
+    // Можно добавить пагинацию позже (page, page_size)
+}
+
+// Ответ со списком задач пользователя
+message UserTasksResponse {
+    repeated TaskBrief tasks = 1; // Повторяющееся поле для списка задач
+}
+
+// Краткая информация о задаче для списка
+message TaskBrief {
+    string id = 1;
+    string expression = 2;
+    string status = 3;
+    string created_at = 4; // RFC3339
+}
