@@ -9,6 +9,7 @@ import (
 
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/config"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/grpc_handler"
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/repository"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/logger"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/postgres"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/pkg/shutdown"
@@ -77,9 +78,12 @@ func Run() {
 				})
 				return pool, nil
 			},
+			// 3.5 Репозиторий Задач <-- Добавляем провайдер
+            // Fx передаст *pgxpool.Pool, *zap.Logger
+            repository.NewPgxTaskRepository,
 
             // 4. gRPC Хендлер (Сервер)
-            // Fx передаст *zap.Logger
+            // Теперь NewOrchestratorServer будет принимать TaskRepository
             grpc_handler.NewOrchestratorServer,
 
             // 5. gRPC Сервер (стандартный)

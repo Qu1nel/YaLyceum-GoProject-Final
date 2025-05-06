@@ -362,27 +362,33 @@ graph LR
     RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/login \
     -H "Content-Type: application/json" \
     -d '{"login": "testuser", "password": "password123"}')
+    ```
 
-    # Печатаем ответ для проверки
+    ```bash
+    # Печатаем ответ для проверки:
     echo "Ответ от /login:"
     echo $RESPONSE
 
     # Извлекаем токен с помощью jq (если установлен)
     TOKEN=$(echo $RESPONSE | jq -r .token)
+    ```
 
-    # --- ИЛИ ---
+    --- ИЛИ ---
+
+    ```
     # Если jq не установлен, скопируйте значение поля "token" из вывода выше вручную
-    # TOKEN="<вставьте_токен_сюда>"
-    # ---
+    TOKEN="<вставьте_токен_сюда>"
+    ```
 
+    ```bash
     # Проверяем, что токен извлечен (или вставлен вручную)
     if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-      echo "Ошибка: Не удалось получить токен!"
+        echo "Ошибка: Не удалось получить токен"
     else
-      echo "Токен успешно получен: $TOKEN"
-      # Экспортируем токен в переменную окружения для текущей сессии (удобно)
-      export ACCESS_TOKEN=$TOKEN
-      echo "Токен сохранен в переменную \$ACCESS_TOKEN"
+        echo "Токен успешно получен: $TOKEN "
+        # Экспортируем токен в переменную окружения для текущей сессии (удобно)
+        export ACCESS_TOKEN=$TOKEN
+        echo "Токен сохранен в переменную \$ACCESS_TOKEN "
     fi
     ```
     *(На данном этапе токен будет 'jwt_token_placeholder_...', используйте его)*
@@ -394,7 +400,7 @@ graph LR
     echo "Используемый токен: $ACCESS_TOKEN" # Проверка
     curl -i -X POST http://localhost:8080/api/v1/calculate \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer $ACCESS_TOKEN" \
+    -H "Authorization: Bearer $ACCESS_TOKEN " \
     -d '{"expression": "2+2*2"}'
     # Ожидаем статус 202 Accepted и {"task_id":"..."}
     ```
@@ -403,7 +409,7 @@ graph LR
     *После реализации эндпоинта и JWT:*
     ```bash
     curl -i -X GET http://localhost:8080/api/v1/tasks \
-    -H "Authorization: Bearer $ACCESS_TOKEN"
+    -H "Authorization: Bearer $ACCESS_TOKEN "
     ```
 
 5.  **Получите детали задачи (TBD):**
@@ -412,7 +418,7 @@ graph LR
     # Замените <task_id> на ID, полученный на шаге 3
     TASK_ID="<task_id>"
     curl -i -X GET http://localhost:8080/api/v1/tasks/$TASK_ID \
-    -H "Authorization: Bearer $ACCESS_TOKEN"
+    -H "Authorization: Bearer $ACCESS_TOKEN "
     ```
 
 ### Использование Веб-интерфейса (TBD)
