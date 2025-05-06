@@ -4,24 +4,31 @@ package worker;
 
 option go_package = "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/worker;worker_grpc";
 
-// Сервис Воркера
+// Сервис Воркера для выполнения одной операции
 service WorkerService {
-  // Выполняет одну арифметическую операцию
-  rpc ProcessSubTask(SubTaskRequest) returns (SubTaskResponse);
+  // Вычисляет одну операцию
+  rpc CalculateOperation(CalculateOperationRequest) returns (CalculateOperationResponse);
 }
 
-// Запрос на выполнение подзадачи (операции)
-message SubTaskRequest {
-  string operation_id = 1; // ID операции (для отслеживания)
-  string operation_type = 2; // Тип операции (+, -, *, /, ^, sqrt, log)
-  double operand1 = 3;
-  double operand2 = 4; // Может быть не использован для унарных операций
-  // Можно добавить другие поля, если необходимо
-}
-
-// Ответ с результатом подзадачи
-message SubTaskResponse {
+// Запрос на вычисление операции
+message CalculateOperationRequest {
+  // Уникальный ID операции (может быть полезен для отслеживания/логирования)
   string operation_id = 1;
+  // Операция для выполнения (e.g., "+", "-", "*", "/", "^", "neg" для унарного минуса)
+  string operation_symbol = 2;
+  // Операнды. Для унарных операций используется только operand_a.
+  double operand_a = 3;
+  double operand_b = 4; // Игнорируется для унарных операций
+  // Таймаут на выполнение операции (TBD: может передаваться из Оркестратора)
+  // int64 operation_timeout_ms = 5;
+}
+
+// Ответ с результатом операции
+message CalculateOperationResponse {
+  // ID операции из запроса
+  string operation_id = 1;
+  // Результат вычисления
   double result = 2;
-  string error = 3; // Сообщение об ошибке, если была
+  // Сообщение об ошибке, если вычисление не удалось (e.g., деление на ноль)
+  string error_message = 3; // Пустое, если нет ошибки
 }

@@ -8,14 +8,18 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config определяет структуру конфигурации для Оркестратора.
+type GRPCClientConfig struct {
+	WorkerAddress string        `mapstructure:"WORKER_GRPC_ADDRESS"`
+	Timeout       time.Duration `mapstructure:"GRPC_CLIENT_TIMEOUT"` // Общий таймаут для gRPC клиентов
+}
+
 type Config struct {
-	AppEnv          string         `mapstructure:"APP_ENV"`
+	AppEnv          string        `mapstructure:"APP_ENV"`
 	GRPCServer      GRPCServerConfig `mapstructure:",squash"`
 	Database        DatabaseConfig `mapstructure:",squash"`
 	Logger          LoggerConfig   `mapstructure:",squash"`
-	GracefulTimeout time.Duration  `mapstructure:"GRACEFUL_TIMEOUT"`
-    // Добавим позже адреса Воркеров
+	GracefulTimeout time.Duration `mapstructure:"GRACEFUL_TIMEOUT"`
+	WorkerClient    GRPCClientConfig `mapstructure:",squash"` // <-- Добавили конфигурацию клиента Воркера
 }
 
 // GRPCServerConfig содержит конфигурацию gRPC сервера.
@@ -44,6 +48,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("LOG_LEVEL", "info")
 	viper.SetDefault("DB_POOL_MAX_CONNS", 10)
 	viper.SetDefault("GRACEFUL_TIMEOUT", 5*time.Second)
+	viper.SetDefault("WORKER_GRPC_ADDRESS", "worker:50052")
+	viper.SetDefault("GRPC_CLIENT_TIMEOUT", "5s") 
 
 	// Настройка чтения переменных окружения
 	viper.AutomaticEnv()
@@ -68,6 +74,15 @@ func Load() (*Config, error) {
 	if cfg.Database.DSN == "" {
 		return nil, fmt.Errorf("переменная окружения POSTGRES_DSN должна быть установлена")
 	}
+
+	// ... валидация ORCHESTRATOR_GRPC_PORT, POSTGRES_DSN ...
+	if cfg.WorkerClient.WorkerAddress == "" {
+		return nil, fmt.Errorf("переменная окружения WORKER_GRPC_ADDRESS должна быть установлена")
+	}
+    if cfg.WorkerClient.Timeout <= 0 {
+        return nil, fmt.Errorf("GRPC_CLIENT_TIMEOUT должен быть положительной длительностью")
+    }
+
 
 	return &cfg, nil
 }

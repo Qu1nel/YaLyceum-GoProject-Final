@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"time"
 
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/client"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/config"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/grpc_handler"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/repository"
@@ -20,6 +22,16 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
+
+type workerClientConfigAdapter struct {
+    cfg *config.Config
+}
+func (a *workerClientConfigAdapter) GetWorkerAddress() string {
+    return a.cfg.WorkerClient.WorkerAddress
+}
+func (a *workerClientConfigAdapter) GetGRPCClientTimeout() time.Duration {
+    return a.cfg.WorkerClient.Timeout
+}
 
 // Run запускает приложение Оркестратор.
 func Run() {
@@ -57,6 +69,10 @@ func Run() {
 				}
 				return cfg, nil
 			},
+			// 1.5 Адаптер для клиентов Воркера
+			func(cfg *config.Config) client.WorkerClientConfigProvider {
+                return &workerClientConfigAdapter{cfg: cfg}
+            },
 			// 2. Логгер
 			func() *zap.Logger {
 				return log
@@ -81,6 +97,9 @@ func Run() {
 			// 3.5 Репозиторий Задач <-- Добавляем провайдер
             // Fx передаст *pgxpool.Pool, *zap.Logger
             repository.NewPgxTaskRepository,
+
+			// 3.6 
+			client.NewWorkerServiceClient,
 
             // 4. gRPC Хендлер (Сервер)
             // Теперь NewOrchestratorServer будет принимать TaskRepository
