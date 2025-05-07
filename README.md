@@ -701,7 +701,7 @@ go test -v -a ./tests/integration/...
    <img src="./docs/images/show_error_inavalid_expression.png" alt="Детали не корректного выражения 2" width="850px" height="auto" />
 </div>
 
-5. (Опционально) Скриншот Swagger UI.
+5. Скриншот Swagger UI.
    Интерфейс Swagger UI, демонстрирующий доступные эндпоинты API.
 
 <div align="center">
