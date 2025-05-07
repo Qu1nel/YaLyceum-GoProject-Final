@@ -22,6 +22,7 @@ up: check-docker ## Build and start all services in detached mode (-d)
 	@echo -e "$(GREEN)Services started!$(RESET)"
 	@echo -e "$(YELLOW)Use 'make logs' or 'make logs-<service>' to view logs.$(RESET)"
 	@echo -e "$(YELLOW)Use 'make down' to stop and remove containers.$(RESET)"
+	@echo -e "$(BLUE)Follow 'http://localhost:80/' or 'http://localhost:8080/swagger/'$(RESET)"
 
 ps: check-docker ## Show the status of running Docker Compose containers
 	@echo -e "$(BLUE)Container status:$(RESET)"
