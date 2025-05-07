@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time" // Добавлен импорт
 
 	"github.com/google/uuid"
@@ -48,22 +49,28 @@ func NewPgxUserRepository(pool *pgxpool.Pool, log *zap.Logger) UserRepository {
 }
 
 func (r *pgxUserRepository) CreateUser(ctx context.Context, login, passwordHash string) (uuid.UUID, error) {
-	query := `INSERT INTO users (login, password_hash) VALUES ($1, $2) RETURNING id`
-	var userID uuid.UUID
+    query := `INSERT INTO users (login, password_hash) VALUES ($1, $2) RETURNING id`
+    var userID uuid.UUID
 
-	err := r.pool.QueryRow(ctx, query, login, passwordHash).Scan(&userID)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolationCode && pgErr.ConstraintName == "idx_users_login" {
-			r.log.Warn("Попытка создать пользователя с существующим логином", zap.String("login", login))
-			return uuid.Nil, ErrLoginAlreadyExists // Возвращаем нашу кастомную ошибку
-		}
-		r.log.Error("Не удалось создать пользователя в БД", zap.Error(err), zap.String("login", login))
-		return uuid.Nil, fmt.Errorf("%w: не удалось вставить пользователя: %v", ErrDatabase, err)
-	}
+    err := r.pool.QueryRow(ctx, query, login, passwordHash).Scan(&userID)
+    if err != nil {
+        var pgErr *pgconn.PgError
+        // Проверяем, является ли ошибка ошибкой нарушения unique constraint
+        if errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolationCode {
+            // Дополнительно можно проверить pgErr.ConstraintName, если он известен и стабилен
+            // (например, имя индекса idx_users_login или users_login_key)
+            // В твоих логах это "users_login_key"
+            if strings.Contains(pgErr.ConstraintName, "login") { // Простая проверка на содержание "login" в имени ограничения
+                 r.log.Warn("Попытка создать пользователя с существующим логином (репозиторий)", zap.String("login", login))
+                 return uuid.Nil, ErrLoginAlreadyExists 
+            }
+        }
+        r.log.Error("Не удалось создать пользователя в БД (репозиторий)", zap.Error(err), zap.String("login", login))
+        return uuid.Nil, fmt.Errorf("%w: не удалось вставить пользователя: %v", ErrDatabase, err)
+    }
 
-	r.log.Info("Пользователь успешно создан", zap.String("login", login), zap.String("userID", userID.String()))
-	return userID, nil
+    r.log.Info("Пользователь успешно создан (репозиторий)", zap.String("login", login), zap.Stringer("userID", userID))
+    return userID, nil
 }
 
 func (r *pgxUserRepository) GetUserByLogin(ctx context.Context, login string) (*User, error) {

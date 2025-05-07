@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http" // Будем использовать для прямого вызова хендлера Агента, если понадобится, но лучше через HTTP клиент
+	"strings"
 	"testing"
 	"time"
 
@@ -432,8 +433,198 @@ func TestIntegration_SubmitExpressionThatFailsAtEvaluation(t *testing.T) {
 	assert.Nil(t, taskDetails.Result, "Результат должен быть nil для задачи со статусом failed")
 }
 
-// TODO: Добавить другие интеграционные тесты:
-// - Получение списка задач /tasks
-// - Доступ к чужой задаче
-// - Запросы без токена / с невалидным токеном
-// - Регистрация под занятым логином
+func TestIntegration_TasksAPI_AccessControls(t *testing.T) {
+	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
+	client := &http.Client{Timeout: 10 * time.Second}
+	ctx := context.Background()
+
+	// --- Шаг 1: Создание и логин Пользователя A ---
+	userALogin := fmt.Sprintf("userA_access_%d", time.Now().UnixNano()%1000000)
+	userAPassword := "passwordA"
+	tokenA := registerAndLoginUser(t, client, ctx, userALogin, userAPassword)
+	log.Printf("Интеграционный тест (AccessControls): Пользователь A (%s) вошел.\n", userALogin)
+
+	// --- Шаг 2: Пользователь A создает задачу ---
+	exprA := "100+200"
+	calcPayloadA := map[string]string{"expression": exprA}
+	calcBodyA, _ := json.Marshal(calcPayloadA)
+	calcReqA, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/calculate", bytes.NewBuffer(calcBodyA))
+	calcReqA.Header.Set("Content-Type", "application/json")
+	calcReqA.Header.Set("Authorization", "Bearer "+tokenA)
+	calcRespA, err := client.Do(calcReqA)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusAccepted, calcRespA.StatusCode, "Создание задачи пользователем A должно вернуть 202")
+	var calcDataA CalculateResponse
+	err = json.NewDecoder(calcRespA.Body).Decode(&calcDataA)
+	require.NoError(t, err)
+	calcRespA.Body.Close()
+	taskAID := calcDataA.TaskID
+	require.NotEmpty(t, taskAID)
+	log.Printf("Интеграционный тест (AccessControls): Пользователь A создал задачу %s.\n", taskAID)
+
+	// Даем время на вычисление задачи A
+	time.Sleep(1 * time.Second)
+
+	// --- Шаг 3: Создание и логин Пользователя B ---
+	userBLogin := fmt.Sprintf("userB_access_%d", time.Now().UnixNano()%1000000)
+	userBPassword := "passwordB"
+	tokenB := registerAndLoginUser(t, client, ctx, userBLogin, userBPassword)
+	log.Printf("Интеграционный тест (AccessControls): Пользователь B (%s) вошел.\n", userBLogin)
+
+	// --- Шаг 4: Пользователь B пытается получить детали задачи Пользователя A ---
+	detailsURL_A_by_B := fmt.Sprintf("%s/tasks/%s", testAgentBaseURL, taskAID)
+	detailsReq_A_by_B, _ := http.NewRequestWithContext(ctx, "GET", detailsURL_A_by_B, nil)
+	detailsReq_A_by_B.Header.Set("Authorization", "Bearer "+tokenB) // Используем токен B
+	detailsResp_A_by_B, err := client.Do(detailsReq_A_by_B)
+	require.NoError(t, err)
+	defer detailsResp_A_by_B.Body.Close()
+
+	// Ожидаем 404 Not Found, так как пользователь B не должен видеть задачу A
+	assert.Equal(t, http.StatusNotFound, detailsResp_A_by_B.StatusCode, "Пользователь B не должен иметь доступ к задаче пользователя A (ожидаем 404)")
+	var errorDataB ErrorResponse
+	err = json.NewDecoder(detailsResp_A_by_B.Body).Decode(&errorDataB)
+	if err == nil { // Если удалось распарсить тело ошибки
+		log.Printf("Интеграционный тест (AccessControls): Ошибка при доступе B к задаче A: %s\n", errorDataB.Error)
+		assert.Contains(t, errorDataB.Error, "не найдена", "Сообщение об ошибке должно указывать на 'не найдена'")
+	} else {
+		log.Printf("Интеграционный тест (AccessControls): Не удалось распарсить тело ошибки при доступе B к задаче A (статус %d)\n", detailsResp_A_by_B.StatusCode)
+	}
+
+
+	// --- Шаг 5: Пользователь B запрашивает свой список задач (должен быть пустым) ---
+	tasksReqB, _ := http.NewRequestWithContext(ctx, "GET", testAgentBaseURL+"/tasks", nil)
+	tasksReqB.Header.Set("Authorization", "Bearer "+tokenB)
+	tasksRespB, err := client.Do(tasksReqB)
+	require.NoError(t, err)
+	defer tasksRespB.Body.Close()
+	require.Equal(t, http.StatusOK, tasksRespB.StatusCode, "GET /tasks для пользователя B должен вернуть 200 OK")
+
+	var userBTasks []TaskListItemResponse
+	err = json.NewDecoder(tasksRespB.Body).Decode(&userBTasks)
+	require.NoError(t, err, "Ошибка декодирования списка задач пользователя B")
+	assert.Empty(t, userBTasks, "Список задач пользователя B должен быть пустым")
+	log.Printf("Интеграционный тест (AccessControls): Список задач пользователя B пуст, как и ожидалось.\n")
+
+	// --- Шаг 6: Пользователь A запрашивает детали своей задачи (должен получить) ---
+	detailsURL_A_by_A := fmt.Sprintf("%s/tasks/%s", testAgentBaseURL, taskAID)
+	detailsReq_A_by_A, _ := http.NewRequestWithContext(ctx, "GET", detailsURL_A_by_A, nil)
+	detailsReq_A_by_A.Header.Set("Authorization", "Bearer "+tokenA) // Используем токен A
+	detailsResp_A_by_A, err := client.Do(detailsReq_A_by_A)
+	require.NoError(t, err)
+	defer detailsResp_A_by_A.Body.Close()
+	assert.Equal(t, http.StatusOK, detailsResp_A_by_A.StatusCode, "Пользователь A должен иметь доступ к своей задаче")
+	log.Printf("Интеграционный тест (AccessControls): Пользователь A успешно получил детали своей задачи %s.\n", taskAID)
+}
+
+// Вспомогательная функция для регистрации и логина пользователя
+func registerAndLoginUser(t *testing.T, client *http.Client, ctx context.Context, login, password string) string {
+	t.Helper() // Помечаем как хелпер-функцию
+
+	// Регистрация
+	regPayload := map[string]string{"login": login, "password": password}
+	regBody, _ := json.Marshal(regPayload)
+	regReq, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/register", bytes.NewBuffer(regBody))
+	regReq.Header.Set("Content-Type", "application/json")
+	regResp, err := client.Do(regReq)
+	require.NoError(t, err, "Ошибка регистрации в хелпере для %s", login)
+    
+    regBodyBytes, _ := io.ReadAll(regResp.Body)
+    regResp.Body.Close()
+    regResp.Body = io.NopCloser(bytes.NewBuffer(regBodyBytes))
+	if regResp.StatusCode != http.StatusOK {
+        var errResp ErrorResponse
+        if json.Unmarshal(regBodyBytes, &errResp) == nil {
+            // Проверяем, не является ли это ошибкой "логин уже существует" (409)
+            if regResp.StatusCode == http.StatusConflict && strings.Contains(errResp.Error, "уже существует") {
+                log.Printf("Хелпер: Пользователь %s уже существует, пропускаем регистрацию.\n", login)
+            } else {
+                t.Fatalf("Регистрация в хелпере для %s не удалась: статус %d, ошибка: %s", login, regResp.StatusCode, errResp.Error)
+            }
+        } else {
+            t.Fatalf("Регистрация в хелпере для %s не удалась: статус %d, тело: %s", login, regResp.StatusCode, string(regBodyBytes))
+        }
+    }
+
+
+	// Логин
+	loginPayload := map[string]string{"login": login, "password": password}
+	loginBody, _ := json.Marshal(loginPayload)
+	loginReq, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/login", bytes.NewBuffer(loginBody))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp, err := client.Do(loginReq)
+	require.NoError(t, err, "Ошибка логина в хелпере для %s", login)
+	defer loginResp.Body.Close()
+	require.Equal(t, http.StatusOK, loginResp.StatusCode, "Логин в хелпере для %s должен вернуть 200 OK", login)
+	var loginData LoginResponse
+	err = json.NewDecoder(loginResp.Body).Decode(&loginData)
+	require.NoError(t, err, "Ошибка декодирования ответа логина в хелпере для %s", login)
+	require.NotEmpty(t, loginData.Token, "Токен не должен быть пустым в хелпере для %s", login)
+	return loginData.Token
+}
+
+func TestIntegration_AuthErrors(t *testing.T) {
+	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
+	client := &http.Client{Timeout: 5 * time.Second}
+	ctx := context.Background()
+
+	// Сценарий 1: Попытка доступа к /calculate без токена
+	t.Run("CalculateWithoutToken", func(t *testing.T) {
+		calcPayload := map[string]string{"expression": "1+1"}
+		calcBody, _ := json.Marshal(calcPayload)
+		calcReq, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/calculate", bytes.NewBuffer(calcBody))
+		calcReq.Header.Set("Content-Type", "application/json")
+		// НЕТ ЗАГОЛОВКА Authorization
+
+		calcResp, err := client.Do(calcReq)
+		require.NoError(t, err)
+		defer calcResp.Body.Close()
+		assert.Equal(t, http.StatusUnauthorized, calcResp.StatusCode, "Ожидался 401 Unauthorized без токена")
+
+		log.Printf("Интеграционный тест (AuthErrors/NoToken): /calculate без токена вернул %d\n", calcResp.StatusCode)
+	})
+
+	// Сценарий 2: Попытка доступа к /tasks с невалидным токеном
+	t.Run("TasksWithInvalidToken", func(t *testing.T) {
+		tasksReq, _ := http.NewRequestWithContext(ctx, "GET", testAgentBaseURL+"/tasks", nil)
+		tasksReq.Header.Set("Authorization", "Bearer an.invalid.token.here")
+
+		tasksResp, err := client.Do(tasksReq)
+		require.NoError(t, err)
+		defer tasksResp.Body.Close()
+		assert.Equal(t, http.StatusUnauthorized, tasksResp.StatusCode, "Ожидался 401 Unauthorized с невалидным токеном")
+		
+		log.Printf("Интеграционный тест (AuthErrors/InvalidToken): /tasks с невалидным токеном вернул %d\n", tasksResp.StatusCode)
+	})
+}
+
+func TestIntegration_RegisterExistingLogin(t *testing.T) {
+	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
+	client := &http.Client{Timeout: 5 * time.Second}
+	ctx := context.Background()
+
+	login := fmt.Sprintf("existing_user_%d", time.Now().UnixNano()%1000000)
+	password := "password123"
+	payload := map[string]string{"login": login, "password": password}
+	body, _ := json.Marshal(payload)
+
+	// 1. Первая (успешная) регистрация
+	req1, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/register", bytes.NewBuffer(body))
+	req1.Header.Set("Content-Type", "application/json")
+	resp1, err := client.Do(req1)
+	require.NoError(t, err)
+	defer resp1.Body.Close()
+	require.Equal(t, http.StatusOK, resp1.StatusCode, "Первая регистрация должна быть успешной")
+	log.Printf("Интеграционный тест (RegisterExisting): Пользователь %s успешно зарегистрирован первый раз.\n", login)
+
+
+	// 2. Повторная регистрация с тем же логином
+	req2, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/register", bytes.NewBuffer(body)) // Используем то же тело
+	req2.Header.Set("Content-Type", "application/json")
+	resp2, err := client.Do(req2)
+	require.NoError(t, err)
+	defer resp2.Body.Close()
+
+	assert.Equal(t, http.StatusConflict, resp2.StatusCode, "Повторная регистрация с тем же логином должна вернуть 409 Conflict")
+
+	log.Printf("Интеграционный тест (RegisterExisting): Повторная регистрация пользователя %s вернула %d, как и ожидалось.\n", login, resp2.StatusCode)
+}
