@@ -44,6 +44,12 @@ type TaskDetailsResponse struct { // Упрощенная версия, т.к. �
     UpdatedAt  time.Time `json:"updated_at"`
 }
 
+type TaskListItemResponse struct {
+	ID         string    `json:"id"`
+	Expression string    `json:"expression"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"` // Для парсинга из JSON
+}
 
 // TestIntegration_RegisterLoginSubmitTask проверяет базовый сценарий
 func TestIntegration_RegisterLoginSubmitTask(t *testing.T) {
@@ -189,6 +195,132 @@ func TestIntegration_RegisterLoginSubmitTask(t *testing.T) {
 	assert.InDelta(t, 15.0, *taskDetails.Result, 0.00001, "Результат вычисления некорректен") // (2+3)*4 - 10/2 = 5*4 - 5 = 20 - 5 = 15
 	assert.Nil(t, taskDetails.ErrorMsg, "Сообщение об ошибке должно быть nil для успешно завершенной задачи")
 }
+
+
+func TestIntegration_TasksAPI_ListAndGetOwnTasks(t *testing.T) {
+	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
+	client := &http.Client{Timeout: 10 * time.Second}
+	ctx := context.Background()
+
+	// --- Шаг 1: Регистрация и Логин Пользователя A ---
+	userALogin := fmt.Sprintf("userA_%d", time.Now().UnixNano()%1000000)
+	userAPassword := "passwordA"
+
+	// Регистрация
+	regPayloadA := map[string]string{"login": userALogin, "password": userAPassword}
+	regBodyA, _ := json.Marshal(regPayloadA)
+	regReqA, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/register", bytes.NewBuffer(regBodyA))
+	regReqA.Header.Set("Content-Type", "application/json")
+	regRespA, err := client.Do(regReqA)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, regRespA.StatusCode, "Регистрация пользователя A должна вернуть 200")
+	regRespA.Body.Close()
+
+	// Логин
+	loginPayloadA := map[string]string{"login": userALogin, "password": userAPassword}
+	loginBodyA, _ := json.Marshal(loginPayloadA)
+	loginReqA, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/login", bytes.NewBuffer(loginBodyA))
+	loginReqA.Header.Set("Content-Type", "application/json")
+	loginRespA, err := client.Do(loginReqA)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, loginRespA.StatusCode, "Логин пользователя A должен вернуть 200")
+	var loginDataA LoginResponse
+	err = json.NewDecoder(loginRespA.Body).Decode(&loginDataA)
+	require.NoError(t, err)
+	loginRespA.Body.Close()
+	tokenA := loginDataA.Token
+	require.NotEmpty(t, tokenA)
+	log.Printf("Интеграционный тест (ListOwnTasks): Пользователь %s вошел, токен получен.\n", userALogin)
+
+	// --- Шаг 2: Создание нескольких задач Пользователем A ---
+	expressions := []string{"10+20", "100/10", "2^3"}
+	expectedResults := []float64{30.0, 10.0, 8.0}
+	taskIDs := make([]string, len(expressions))
+
+	for i, expr := range expressions {
+		calcPayload := map[string]string{"expression": expr}
+		calcBody, _ := json.Marshal(calcPayload)
+		calcReq, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/calculate", bytes.NewBuffer(calcBody))
+		calcReq.Header.Set("Content-Type", "application/json")
+		calcReq.Header.Set("Authorization", "Bearer "+tokenA)
+		calcResp, err := client.Do(calcReq)
+		require.NoError(t, err)
+		
+		var calcData CalculateResponse
+        bodyBytes, _ := io.ReadAll(calcResp.Body)
+        calcResp.Body.Close() // Закрываем тело здесь
+        calcResp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		require.Equal(t, http.StatusAccepted, calcResp.StatusCode, "Создание задачи для '%s' должно вернуть 202", expr)
+		err = json.NewDecoder(calcResp.Body).Decode(&calcData)
+		require.NoError(t, err)
+		taskIDs[i] = calcData.TaskID
+		log.Printf("Интеграционный тест (ListOwnTasks): Задача %s для '%s' создана пользователем A.\n", taskIDs[i], expr)
+	}
+
+	// Даем время на асинхронное вычисление всех задач
+	// Суммарная задержка для всех операций по 10ms. Плюс gRPC, БД.
+	// 3 задачи * (несколько операций + накладные расходы)
+	// Увеличим до 3 секунд для надежности
+	log.Println("Интеграционный тест (ListOwnTasks): Ожидание вычисления задач...")
+	time.Sleep(3 * time.Second)
+
+	// --- Шаг 3: Получение списка задач Пользователя A ---
+	tasksReq, _ := http.NewRequestWithContext(ctx, "GET", testAgentBaseURL+"/tasks", nil)
+	tasksReq.Header.Set("Authorization", "Bearer "+tokenA)
+	tasksResp, err := client.Do(tasksReq)
+	require.NoError(t, err)
+	defer tasksResp.Body.Close()
+	require.Equal(t, http.StatusOK, tasksResp.StatusCode, "GET /tasks должен вернуть 200 OK")
+
+	var userATasks []TaskListItemResponse // Используем нашу структуру для ответа
+	err = json.NewDecoder(tasksResp.Body).Decode(&userATasks)
+	require.NoError(t, err, "Ошибка декодирования списка задач")
+	
+	log.Printf("Интеграционный тест (ListOwnTasks): Получено %d задач для пользователя A.\n", len(userATasks))
+	assert.Len(t, userATasks, len(expressions), "Количество полученных задач не совпадает с количеством созданных")
+
+	// Проверяем, что все созданные ID задач присутствуют в списке
+	// и что их статус completed (так как выражения простые и должны быстро вычислиться)
+	returnedTaskIDs := make(map[string]bool)
+	for _, task := range userATasks {
+		returnedTaskIDs[task.ID] = true
+		assert.Contains(t, expressions, task.Expression, "Выражение задачи не найдено среди оригинальных")
+		assert.Equal(t, repository.StatusCompleted, task.Status, "Статус задачи %s должен быть 'completed'", task.ID)
+	}
+	for _, originalID := range taskIDs {
+		assert.True(t, returnedTaskIDs[originalID], "Созданная задача с ID %s не найдена в списке", originalID)
+	}
+
+	// --- Шаг 4: Получение деталей одной из задач Пользователя A ---
+	if len(taskIDs) > 0 {
+		firstTaskID := taskIDs[0]
+		firstExpression := expressions[0]
+		firstExpectedResult := expectedResults[0]
+
+		detailsURL := fmt.Sprintf("%s/tasks/%s", testAgentBaseURL, firstTaskID)
+		detailsReq, _ := http.NewRequestWithContext(ctx, "GET", detailsURL, nil)
+		detailsReq.Header.Set("Authorization", "Bearer "+tokenA)
+		detailsResp, err := client.Do(detailsReq)
+		require.NoError(t, err)
+		defer detailsResp.Body.Close()
+		require.Equal(t, http.StatusOK, detailsResp.StatusCode, "GET /tasks/{id} должен вернуть 200 OK для своей задачи")
+
+		var taskDetails TaskDetailsResponse
+		err = json.NewDecoder(detailsResp.Body).Decode(&taskDetails)
+		require.NoError(t, err, "Ошибка декодирования деталей задачи")
+
+		assert.Equal(t, firstTaskID, taskDetails.ID)
+		assert.Equal(t, firstExpression, taskDetails.Expression)
+		assert.Equal(t, repository.StatusCompleted, taskDetails.Status)
+		require.NotNil(t, taskDetails.Result, "Результат не должен быть nil")
+		assert.InDelta(t, firstExpectedResult, *taskDetails.Result, 0.00001)
+		assert.Nil(t, taskDetails.ErrorMsg, "Сообщение об ошибке должно быть nil")
+		log.Printf("Интеграционный тест (ListOwnTasks): Детали задачи %s успешно получены.\n", firstTaskID)
+	}
+}
+
+
 func TestIntegration_SubmitExpressionThatFailsAtEvaluation(t *testing.T) {
 	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -301,7 +433,7 @@ func TestIntegration_SubmitExpressionThatFailsAtEvaluation(t *testing.T) {
 }
 
 // TODO: Добавить другие интеграционные тесты:
-// - Деление на ноль (ожидаем статус failed и сообщение об ошибке)
 // - Получение списка задач /tasks
 // - Доступ к чужой задаче
 // - Запросы без токена / с невалидным токеном
+// - Регистрация под занятым логином
