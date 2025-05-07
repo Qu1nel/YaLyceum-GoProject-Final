@@ -174,10 +174,8 @@ test-coverage-html: test-coverage ## Generate HTML coverage report from coverage
 	else \
 		$(GO_CMD) tool cover $(GO_COVER_HTML_FLAGS); \
 		echo -e "$(GREEN)HTML coverage report generated: coverage.html$(RESET)"; \
-		echo -e "$(YELLOW)Open 'coverage.html' in your browser to view the report.$(RESET)"; \
+		echo -e "$(YELLOW)Open '$(GREEN)coverage.html$(YELLOW)' in your browser to view the report.$(RESET)"; \
 	fi
-	# Открыть отчет автоматически (опционально, может не работать на всех системах)
-	@# xdg-open coverage.html || open coverage.html || start coverage.html
 
 # Clean commands
 ##############################################################################
