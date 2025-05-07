@@ -3,9 +3,6 @@
 .gitignore
 .gitattributes
 
-# Docker
-Dockerfile
-
 # IDE / Editor specific
 .idea/
 .vscode/
@@ -40,9 +37,6 @@ build/
 # Документация и прочее
 README.md
 LICENSE
-Makefile
-.env
-.env.example
 
 # Логи и временные файлы
 *.log
