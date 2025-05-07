@@ -126,13 +126,13 @@
 
 ```mermaid
 graph TD
-    U[👤 Пользователь] -- HTTP/S --> FEN[🌐 Фронтенд (Nginx + SPA)]
-    FEN -- HTTP/S API --> AGENT[🚀 Агент Сервис (Go, Echo)]
-    AGENT -- gRPC --> ORCH[⚙️ Оркестратор Сервис (Go, gRPC)]
-    AGENT -- SQL --> DB[(🐘 PostgreSQL)]
+    U[👤 Пользователь] -- HTTP/S --> FEN["🌐 Фронтенд (Nginx + SPA)"]
+    FEN -- HTTP/S API --> AGENT["🚀 Агент Сервис (Go, Echo)"]
+    AGENT -- gRPC --> ORCH["⚙️ Оркестратор Сервис (Go, gRPC)"]
+    AGENT -- SQL --> DB["(🐘 PostgreSQL)"]
     ORCH -- SQL --> DB
-    ORCH -- gRPC --> W1[🛠️ Воркер 1 (Go, gRPC)]
-    ORCH -- gRPC --> WN[🛠️ Воркер N (Go, gRPC)]
+    ORCH -- gRPC --> W1["🛠️ Воркер 1 (Go, gRPC)"]
+    ORCH -- gRPC --> WN["🛠️ Воркер N (Go, gRPC)"]
 
     subgraph "Клиентская часть"
         U
