@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
+	"math"
 	"time"
 
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/repository"
@@ -131,11 +131,25 @@ func (s *OrchestratorServer) startEvaluation(taskID uuid.UUID, userID uuid.UUID,
     // 2. Вызвать рекурсивный вычислитель
     s.log.Debug("Начало рекурсивного вычисления AST", zap.Stringer("taskID", taskID))
     result, evalErr := s.evaluator.Evaluate(evalCtx, rootNode)
-	if strconv.FormatFloat(result, 'f', 6, 64) == "+Inf" || strconv.FormatFloat(result, 'f', 6, 64) == "-Inf" {
-		result = 0
-		evalErr = fmt.Errorf("деление на ноль")
+	s.log.Debug("Рекурсивное вычисление AST завершено", zap.Stringer("taskID", taskID), zap.Float64("result_before_check", result) , zap.Error(evalErr))
+
+	if evalErr == nil {
+		if math.IsInf(result, 0) || math.IsNaN(result) {
+            errorMsg := "ошибка вычисления: результат является бесконечностью или не числом (возможно, деление на ноль)"
+            if math.IsInf(result, 1) {
+                errorMsg = "ошибка вычисления: результат +бесконечность (вероятно, деление на ноль)"
+            } else if math.IsInf(result, -1) {
+                errorMsg = "ошибка вычисления: результат -бесконечность"
+            } else if math.IsNaN(result) {
+                errorMsg = "ошибка вычисления: результат не является числом (NaN)"
+            }
+			s.log.Warn("Результат вычисления является Inf или NaN",
+				zap.Stringer("taskID", taskID),
+				zap.Float64("result", result),
+			)
+			evalErr = errors.New(errorMsg) // Устанавливаем ошибку, чтобы задача была помечена как failed
+		}
 	}
-    s.log.Debug("Рекурсивное вычисление AST завершено", zap.Stringer("taskID", taskID), zap.Error(evalErr))
 
 
     // 3. Обработать результат

@@ -59,10 +59,9 @@ func (s *CalculatorService) Calculate(ctx context.Context, operation string, a, 
 		result = a * b
 		delay = s.cfg.Multiplication
 	case "/":
-		if b == 0.0 { // Явная проверка на ноль
-			s.log.Warn("CalculatorService: обнаружено деление на ноль", zap.Float64("a", a))
-			calcErr = ErrDivisionByZero // Устанавливаем ошибку
-			// result остается 0.0 по умолчанию для float64
+		if b == 0.0 {
+			s.log.Info("CalculatorService: обнаружено деление на ноль")
+			calcErr = ErrDivisionByZero
 		} else {
 			result = a / b
 		}
@@ -70,26 +69,23 @@ func (s *CalculatorService) Calculate(ctx context.Context, operation string, a, 
 	case "^":
 		result = math.Pow(a, b)
 		delay = s.cfg.Exponentiation
-	case "neg": // Обработка унарного минуса, который мы посылаем из Evaluator
-		result = -a // b игнорируется
-        // Используем задержку, аналогичную вычитанию, или свою
-		delay = s.cfg.Subtraction // Или можно добавить TIME_UNARY_MINUS_MS в конфиг
+	case "neg":
+		result = -a
+		delay = s.cfg.Subtraction 
 	default:
 		s.log.Warn("CalculatorService: неизвестный оператор", zap.String("operation", operation))
 		calcErr = fmt.Errorf("%w: '%s'", ErrUnknownOperator, operation)
-		delay = 0 // Нет смысла в задержке для неизвестной операции
+		delay = 0 
 	}
 
-	// Если ошибка была определена на этапе выбора операции (деление на ноль, неизвестный оператор)
 	if calcErr != nil {
 		s.log.Error("CalculatorService: ошибка определена до имитации задержки, возвращаем ошибку",
 			zap.String("operation", operation),
 			zap.Error(calcErr),
 		)
-		return 0, calcErr // Возвращаем 0 (или другое значение по умолчанию) и ошибку
+		return 0, calcErr
 	}
 
-	// Если ошибки не было, имитируем задержку вычисления
 	s.log.Debug("CalculatorService: начало имитации задержки вычисления",
 		zap.String("operation", operation),
 		zap.Duration("delay", delay),
@@ -101,9 +97,8 @@ func (s *CalculatorService) Calculate(ctx context.Context, operation string, a, 
 			zap.String("operation", operation),
 			zap.Float64("result", result),
 		)
-		return result, nil // Успешное вычисление
+		return result, nil
 	case <-ctx.Done():
-		// Контекст был отменен (например, таймаут со стороны вызывающего кода или Оркестратора)
 		s.log.Warn("CalculatorService: вычисление операции отменено родительским контекстом",
 			zap.String("operation", operation),
 			zap.Error(ctx.Err()),

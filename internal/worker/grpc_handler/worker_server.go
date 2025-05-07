@@ -44,16 +44,13 @@ func (s *WorkerServer) CalculateOperation(ctx context.Context, req *pb.Calculate
 
 	// Вызов сервиса вычислений
 	result, errService := s.calcService.Calculate(ctx, operationSymbol, operandA, operandB)
-	s.log.Debug("WorkerServer: результат от CalculatorService", // Отладочный лог
+	s.log.Debug("WorkerServer: результат от CalculatorService",
 		zap.String("operationID", operationID),
-		zap.Float64("serviceResult", result), // result здесь может быть 0, если была ошибка
-		zap.Error(errService),                // errService должен содержать ошибку, если она была
+		zap.Float64("serviceResult", result), // Если errService != nil, result должен быть 0
+		zap.Error(errService),               // errService должен быть ErrDivisionByZero
 	)
 
-	response := &pb.CalculateOperationResponse{
-		OperationId: operationID,
-		// Result и ErrorMessage будут установлены ниже
-	}
+	response := &pb.CalculateOperationResponse{OperationId: operationID}
 
 	if errService != nil { // Если CalculatorService ВЕРНУЛ ОШИБКУ
 		s.log.Warn("WorkerServer: CalculatorService вернул ошибку, формируем gRPC ошибку",

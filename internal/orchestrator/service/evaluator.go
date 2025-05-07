@@ -196,15 +196,9 @@ func (e *ExpressionEvaluator) callWorker(ctx context.Context, opSymbol string, a
 		zap.Any("response_body", res),
 		zap.Error(grpcErr),
 	)
-    e.log.Debug("ExpressionEvaluator.callWorker: СЫРОЙ ОТВЕТ от workerClient.CalculateOperation",
-		zap.String("operationID", req.OperationId),
-		zap.String("opSymbol", opSymbol),
-		zap.Any("response_body", res), // res может быть nil, если err != nil
-		zap.Error(grpcErr),                // Это gRPC ошибка от клиента или статусная ошибка от сервера
-	)
 
- 	if grpcErr != nil { // Если есть gRPC ошибка
-		e.log.Warn("ExpressionEvaluator.callWorker: Ошибка gRPC вызова Воркера", // Уточнил лог
+ 	if grpcErr != nil {
+		e.log.Warn("ExpressionEvaluator.callWorker: Ошибка gRPC вызова Воркера",
 			zap.String("operationID", req.OperationId),
 			zap.String("symbol", opSymbol),
 			zap.Error(grpcErr),
@@ -212,7 +206,7 @@ func (e *ExpressionEvaluator) callWorker(ctx context.Context, opSymbol string, a
 		st, ok := status.FromError(grpcErr)
 		if ok {
 			if st.Code() == codes.InvalidArgument {
-				return 0, errors.New(st.Message()) // Возвращаем только сообщение
+				return 0, errors.New(st.Message())
 			}
 			if st.Code() == codes.DeadlineExceeded || errors.Is(opCtx.Err(), context.DeadlineExceeded) || errors.Is(opCtx.Err(), context.Canceled) {
 				return 0, fmt.Errorf("таймаут/отмена операции '%s': %w", opSymbol, ErrEvaluationTimeout)
