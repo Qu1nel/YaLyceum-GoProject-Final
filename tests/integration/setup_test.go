@@ -151,7 +151,7 @@ func runMigrations(dsn string) error {
 	if err != nil {
 		return fmt.Errorf("не удалось найти корень проекта для миграций: %w", err)
 	}
-	absMigrationsPath, err := filepath.Abs(filepath.Join(projectRoot, "migrations"))
+	absMigrationsPath, err := filepath.Abs(filepath.Join(projectRoot, "tests/migrations"))
 	if err != nil {
 		return fmt.Errorf("не удалось получить абсолютный путь к миграциям: %w", err)
 	}
