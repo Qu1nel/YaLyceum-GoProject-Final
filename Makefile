@@ -12,12 +12,9 @@ GO_COVER_FLAGS := -cover -coverprofile=coverage.out
 GO_COVER_HTML_FLAGS := -html=coverage.out -o coverage.html
 
 # OS Detection and UNIT_TEST_PACKAGES definition
-# Default to a fixed list, good for Windows or as a fallback
 DEFAULT_UNIT_TEST_PACKAGES := ./internal/agent/service ./internal/orchestrator/grpc_handler ./internal/orchestrator/repository ./internal/orchestrator/service ./internal/worker/grpc_handler ./internal/worker/service
 
 # Try to determine OS
-# Common approach: check for Windows-specific environment variables or use uname
-# Fallback to 'Unknown' if uname is not available
 UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
 
 ifeq ($(OS),Windows_NT)
@@ -109,7 +106,13 @@ down: check-docker ## Stop and remove containers, networks, and volumes (DB data
 start: check-docker ## Start previously built containers
 	@echo -e "$(BLUE)Starting existing containers...$(RESET)"
 	@$(DOCKER_COMPOSE) start
-	@echo -e "$(GREEN)Containers started.$(RESET)"
+	@echo -e "$(GREEN)Containers started successfully!$(RESET)"
+	@echo -e "$(YELLOW)Access the application:$(RESET)"
+	@echo -e "  Frontend:           $(BLUE)http://localhost:$(FRONTEND_PORT)$(RESET)"
+	@echo -e "  Agent API (Swagger):$(BLUE)http://localhost:$(AGENT_HTTP_PORT)/swagger/$(RESET)"
+	@echo -e "$(YELLOW)Use 'make logs' or 'make logs-<service_name>' to view logs.$(RESET)"
+	@echo -e "$(YELLOW)Use 'make down' to stop and remove everything (incl. data).$(RESET)"
+	@echo -e "$(YELLOW)Use 'make stop' to just stop containers.$(RESET)"
 
 stop: check-docker ## Stop running containers (without removing them or their data)
 	@echo -e "$(YELLOW)Stopping containers...$(RESET)"

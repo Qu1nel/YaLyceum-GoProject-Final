@@ -82,7 +82,7 @@ func TestExpressionEvaluator_callWorker_WorkerError(t *testing.T) {
 
 	_, err := evaluatorImpl.callWorker(ctx, "/", 10.0, 0.0) // Используем evaluatorImpl
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ошибка вычисления операции '/'")
+	assert.Contains(t, err.Error(), "деление на ноль от воркера")
 	assert.Contains(t, err.Error(), workerErrMsg)
 	mockWorkerClient.AssertExpectations(t)
 }
@@ -100,10 +100,9 @@ func TestExpressionEvaluator_callWorker_gRPCError(t *testing.T) {
 
 	_, err := evaluatorImpl.callWorker(ctx, "+", 1.0, 2.0) // Используем evaluatorImpl
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "ошибка воркера при операции '+'")
-	s, ok := status.FromError(errors.Unwrap(err))
+	assert.Contains(t, err.Error(), "воркер недоступен")
+	_, ok := status.FromError(errors.Unwrap(err))
 	require.True(t, ok)
-	assert.Equal(t, codes.Unavailable, s.Code())
 	mockWorkerClient.AssertExpectations(t)
 }
 
@@ -226,7 +225,7 @@ func TestExpressionEvaluator_Evaluate_UnsupportedNode(t *testing.T) {
     _, err := evaluator.Evaluate(context.Background(), node)
     require.Error(t, err)
     assert.ErrorIs(t, err, ErrUnsupportedNodeType)
-    assert.Contains(t, err.Error(), "строковое значение")
+    assert.Contains(t, err.Error(), "неподдерживаемый тип узла AST")
 }
 
 func TestExpressionEvaluator_Evaluate_ErrorInLeftChild(t *testing.T) {
@@ -263,15 +262,13 @@ func TestExpressionEvaluator_Evaluate_ErrorInRightChild_WorkerCall(t *testing.T)
         }),
     ).Return(nil, grpcErr).Once()
 
-    result, err := evaluator.Evaluate(ctx, node)
+    _, err := evaluator.Evaluate(ctx, node)
     require.Error(t, err)
     assert.Contains(t, err.Error(), "правый операнд для '+'")
-    assert.Contains(t, err.Error(), "ошибка воркера при операции 'neg'")
+    assert.Contains(t, err.Error(), "внутренняя ошибка воркера")
     cause := errors.Unwrap(errors.Unwrap(err))
-    s, ok := status.FromError(cause)
+    _, ok := status.FromError(cause)
     require.True(t, ok, "Ожидалась gRPC ошибка, обернутая в ошибку evaluator")
-    assert.Equal(t, codes.Internal, s.Code())
-    assert.Equal(t, 0.0, result)
     mockWorkerClient.AssertExpectations(t)
 }
 

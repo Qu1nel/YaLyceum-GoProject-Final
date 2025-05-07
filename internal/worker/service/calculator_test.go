@@ -44,7 +44,7 @@ func TestCalculatorService_Calculate(t *testing.T) {
 		{name: "Деление", operation: "/", a: 10, b: 5, want: 2.0, wantErr: nil},
 		{name: "Возведение в степень", operation: "^", a: 2, b: 3, want: 8.0, wantErr: nil},
 		{name: "Деление на ноль", operation: "/", a: 10, b: 0, want: 0, wantErr: ErrDivisionByZero},
-		{name: "Неизвестный оператор", operation: "%", a: 10, b: 5, want: 0, wantErr: ErrUnknownOperator, wantMsg: "неизвестный оператор: %"},
+		{name: "Неизвестный оператор", operation: "%", a: 10, b: 5, want: 0, wantErr: ErrUnknownOperator, wantMsg: "неизвестный оператор: '%'"},
         // Можно добавить тесты для унарного минуса, когда он будет реализован в switch
         // {name: "Унарный минус (если реализован)", operation: "neg", a: 5, b: 0, want: -5.0, wantErr: nil},
 	}
