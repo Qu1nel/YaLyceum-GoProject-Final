@@ -36,6 +36,11 @@ services:
       ORCHESTRATOR_GRPC_PORT: ${ORCHESTRATOR_GRPC_PORT:-50051}
       WORKER_GRPC_ADDRESS: ${WORKER_GRPC_ADDRESS:-worker:50052}
       GRPC_CLIENT_TIMEOUT: ${GRPC_CLIENT_TIMEOUT:-5s}
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=:50051"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - calculator_net
 
@@ -66,7 +71,7 @@ services:
       postgres:
         condition: service_healthy
       orchestrator:
-         condition: service_started
+         condition: service_healthy
       worker: 
          condition: service_started
     ports:

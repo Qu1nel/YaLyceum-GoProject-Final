@@ -22,7 +22,7 @@
 </p>
 <p>
   <a href="https://go.dev/doc/install" >
-    <img src="https://img.shields.io/badge/Go-1.24%2B-blueviolet" alt="Версия Go" />
+    <img src="https://img.shields.io/badge/Go-1.22%2B-blueviolet" alt="Версия Go" />
   <a>
   <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/Qu1nel/YaLyceum-GoProject-Final?color=g" alt="Лицензия" />
@@ -83,6 +83,7 @@
 *   **[ ]** Улучшение обработки ошибок и логирования (например, распределенная трассировка).
 *   **[ ]** Подготовка Postman коллекции.
 *   **[ ]** Удаление несущественных комментариев и TODO в коде, улучшение читаемости.
+*   **[ ]** Улучшение `Makefile` (например, `make test` для запуска всех видов тестов).
 
 ## О проекте
 
@@ -210,14 +211,14 @@ sequenceDiagram
 
 ## Технологический стек
 
-*   **Бекенд:** Go 1.24+
+*   **Бекенд:** Go 1.22+ (уточните актуальную версию в `go.mod`)
     *   Веб Фреймворк (Agent): Echo v4
     *   gRPC: [google.golang.org/grpc](google.golang.org/grpc)
     *   База данных: PostgreSQL 15+ (Driver: pgx/v5)
     *   Парсинг выражений: expr-lang/expr
     *   Конфигурация: Viper
     *   Логирование: Zap
-    *   DI (Внедрение зависимостей): Fx
+    *   DI (Внедрение зависимостей): Fx (uber-go/fx)
     *   Аутентификация: bcrypt (хеширование), JWT (github.com/golang-jwt/jwt/v5)
 *   **База данных:** PostgreSQL 15+
 *   **Фронтенд:** HTML, CSS, Vanilla JavaScript (раздается через Nginx)
@@ -235,7 +236,7 @@ sequenceDiagram
 
 Для запуска и разработки проекта вам понадобятся:
 
-*   **Go:** Версия 1.22 или новее. ([Инструкция по установке](https://go.dev/doc/install))
+*   **Go:** Версия 1.24 или новее. ([Инструкция по установке](https://go.dev/doc/install)) (уточните актуальную версию в `go.mod`)
 *   **Docker:** Актуальная версия Docker Engine. ([Инструкция по установке](https://docs.docker.com/engine/install/))
 *   **Docker Compose:** Обычно устанавливается вместе с Docker Desktop. ([Инструкция по установке](https://docs.docker.com/compose/install/))
 *   **Git:** Для клонирования репозитория.
@@ -263,7 +264,7 @@ sequenceDiagram
     *Внимание:* Значение `JWT_SECRET` по умолчанию **небезопасно**! Обязательно измените его на надежный случайный ключ (длиной не менее 32 символов) перед использованием вне локальной разработки.
 
 3.  **Запустите все сервисы:**
-    Эта **единственная команда** соберет Docker-образы (если необходимо) и запустит все контейнеры (Agent, Postgres, Orchestartor, Worker, Frontend) в фоновом режиме (`-d`). Миграции базы данных будут применены автоматически при первом старте контейнера PostgreSQL.
+    Эта **единственная команда** соберет Docker-образы (если необходимо) и запустит все контейнеры (Agent, Postgres, Orchestrator, Worker, Frontend) в фоновом режиме (`-d`). Миграции базы данных будут применены автоматически при первом старте контейнера PostgreSQL.
     ```bash
     make up
     ```
@@ -349,7 +350,7 @@ Swagger UI позволяет просматривать все эндпоинт
 ```bash
 # После успешного логина, извлеките токен из JSON ответа
 # Пример с jq:
-# TOKEN=$(curl -s -X POST -H "Content-Type: application/json" -d '{"login": "testuser_curl", "password": "password123"}' $BASE_URL/login | jq -r .token)
+# TOKEN=$(curl -s -X POST -H "Content-Type: application/json" -d '{"login": "user_for_curl_tests", "password": "strongPassword123"}' $BASE_URL/login | jq -r .token)
 # echo $TOKEN
 # Либо скопируйте вручную.
 ```
@@ -358,7 +359,7 @@ Swagger UI позволяет просматривать все эндпоинт
 
 0. **Удобный `BASE_URL`:**
     ```bash
-    export BASE_URL=”http://localhost:8080/api/v1”
+    export BASE_URL="http://localhost:8080/api/v1"
     ```
 
 1.  **Регистрация нового пользователя:**
@@ -445,7 +446,7 @@ Swagger UI позволяет просматривать все эндпоинт
 
 ```
 YaLyceum-Go-Project-Final/
-├── .github/…           # META - мишура
+├── .github/              # Файлы конфигурации GitHub (Workflows, шаблоны и т.д.)
 ├── cmd/                  # Точки входа для каждого Go-сервиса
 │   ├── agent/           # Сервис Agent (HTTP API, Auth, gRPC клиент)
 │   │   ├── Dockerfile
@@ -572,8 +573,8 @@ YaLyceum-Go-Project-Final/
 *   `docs/`: Сгенерированная Swagger-документация.
 *   `internal/`: Внутренняя логика, специфичная для каждого сервиса (хендлеры, сервисы, репозитории). Код из `internal` не может быть импортирован другими проектами.
     *   `internal/agent/`: Код сервиса Агента.
-    *   `internal/orchestrator/`: Код сервиса Оркестратора (TBD).
-    *   `internal/worker/`: Код сервиса Воркера (TBD).
+    *   `internal/orchestrator/`: Код сервиса Оркестратора.
+    *   `internal/worker/`: Код сервиса Воркера.
     *   `internal/pkg/`: Общие пакеты, используемые *внутри* этого проекта несколькими сервисами (например, хелперы для БД, логгер, хешер).
 *   `migrations/`: SQL-скрипты для миграций базы данных.
 *   `proto/`: Файлы `.proto` для gRPC и сгенерированный из них Go-код (`gen`).

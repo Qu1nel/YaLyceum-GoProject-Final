@@ -48,6 +48,11 @@ build: check-docker ## Build or rebuild service images
 	@$(DOCKER_COMPOSE) build
 	@echo -e "$(GREEN)Build complete.$(RESET)"
 
+build-%: check-docker ## Build a specific service (e.g., make build-agent)
+	@echo -e "$(YELLOW)Building Docker image for $*...$(RESET)"
+	@$(DOCKER_COMPOSE) build $*
+	@echo -e "$(GREEN)Build complete for $*.$(RESET)"
+
 logs: check-docker ## Show logs for all running services (follow)
 	@echo -e "$(YELLOW)Following logs (press Ctrl+C to exit)...$(RESET)"
 	@$(DOCKER_COMPOSE) logs -f
@@ -60,13 +65,23 @@ logs-postgres: check-docker ## Show logs for the 'postgres' service (follow)
 	@echo -e "$(YELLOW)Following logs for 'postgres' (press Ctrl+C to exit)...$(RESET)"
 	@$(DOCKER_COMPOSE) logs -f postgres
 
-# logs-orchestrator: ... (add when the service appears)
-# logs-worker: ... (add when the service appears)
+logs-orchestrator: check-docker
+	@echo -e "$(YELLOW)Following logs for 'orchestrator' (press Ctrl+C to exit)...$(RESET)"
+	@$(DOCKER_COMPOSE) logs -f orchestrator
+
+logs-worker: check-docker
+	@echo -e "$(YELLOW)Following logs for 'worker' (press Ctrl+C to exit)...$(RESET)"
+	@$(DOCKER_COMPOSE) logs -f worker
 
 test: check-docker ## Run Go unit tests for all packages
+	@echo -e "$(YELLOW)Running unit tests for Agent...$(RESET)"
+	@$(DOCKER) exec calculator_agent sh -c "cd /app && go test -v ./cmd/agent/... ./internal/agent/... ./internal/pkg/..."
+	@echo -e "$(YELLOW)Running unit tests for Orchestrator...$(RESET)"
+	@$(DOCKER) exec calculator_orchestrator sh -c "cd /app && go test -v ./cmd/orchestrator/... ./internal/orchestrator/... ./internal/pkg/..."
+	@echo -e "$(YELLOW)Running unit tests for Worker...$(RESET)"
+	@$(DOCKER) exec calculator_worker sh -c "cd /app && go test -v ./cmd/worker/... ./internal/worker/... ./internal/pkg/..."
 	@echo -e "$(YELLOW)Running unit tests...$(RESET)"
 	@$(DOCKER) exec -it calculator_agent sh -c "go test -v ./..." || echo -e "$(RED)Tests failed or the 'agent' service is not running.$(RESET)" # Run inside the agent container
-	# @go test -v ./... # Alternative: run locally if Go is installed
 	@echo -e "$(GREEN)Test execution finished.$(RESET)"
 
 test-coverage: check-docker ## Run tests with coverage report (generated inside container)
@@ -80,7 +95,7 @@ test-coverage: check-docker ## Run tests with coverage report (generated inside 
 clean: check-docker ## Clean the Go build cache
 	@echo -e "$(YELLOW)Cleaning Go build cache...$(RESET)"
 	@go clean -cache
-	# Optional: remove binaries: rm -f agent orchestrator worker
+	@go clean -testcache
 	@echo -e "$(GREEN)Cache cleaned.$(RESET)"
 
 
