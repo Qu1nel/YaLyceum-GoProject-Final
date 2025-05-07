@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/docs/agent_api"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/client"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/config"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/handler"
@@ -23,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"
+	echoSwagger "github.com/swaggo/echo-swagger"
 	"go.uber.org/fx"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
@@ -94,20 +96,9 @@ func Run() {
 				}
 				return cfg, nil
 			},
-			            // Адаптер конфигурации для клиента Оркестратора
-            func(cfg *config.Config) client.OrchestratorClientConfigProvider {
-                return &orchestratorClientConfigAdapter{cfg: cfg}
-			},
-			// 2. Логгер (передаем уже созданный экземпляр)
-			func() *zap.Logger {
-				return log
-			},
-			// 3. Хешер паролей
-			func() hasher.PasswordHasher {
-				// Используем стоимость хеширования по умолчанию из bcrypt.
-				return hasher.NewBcryptHasher(bcrypt.DefaultCost)
-			},
-			// 4. Пул соединений к БД PostgreSQL
+            func(cfg *config.Config) client.OrchestratorClientConfigProvider { return &orchestratorClientConfigAdapter{cfg: cfg} },
+			func() *zap.Logger { return log },
+			func() hasher.PasswordHasher { return hasher.NewBcryptHasher(bcrypt.DefaultCost) },
 			func(lc fx.Lifecycle, cfg *config.Config, log *zap.Logger) (*pgxpool.Pool, error) {
 				var pool *pgxpool.Pool
 				var err error
@@ -134,7 +125,6 @@ func Run() {
 				return pool, nil
 			},
 
-			// 4.5 JWT Manager
 			func(cfg *config.Config, log *zap.Logger) (*jwtauth.Manager, error) {
 				manager, err := jwtauth.NewManager(cfg.JWT.Secret, cfg.JWT.TokenTTL)
 				if err != nil {
@@ -144,34 +134,14 @@ func Run() {
 				log.Info("JWT менеджер успешно создан", zap.Duration("token_ttl", cfg.JWT.TokenTTL))
 				return manager, nil
 			},
-			// 4.7 gRPC Клиент Оркестратора
-            // Fx автоматически передаст OrchestratorClientParams
-            // (Lifecycle, Logger, OrchestratorClientConfigProvider)
-            client.NewOrchestratorServiceClient,
-
-			// 4.6 JWT Auth Middleware
-			// Fx автоматически передаст *jwtauth.Manager и *zap.Logger
 			middleware.JWTAuth,
-
-			// 5. Репозитории
-			// Fx автоматически передаст зависимости (*pgxpool.Pool, *zap.Logger) в конструктор.
-			repository.NewPgxUserRepository,
-			// ... Добавить TaskRepository позже ...
-
-			// 6. Сервисы
-			// Fx передаст (UserRepository, PasswordHasher, *zap.Logger, *jwtauth.Manager).
-			service.NewAuthService,
-			service.NewTaskService,
-			// ... Добавить TaskService позже ...
-
-			// 7. Хендлеры
-			// Fx передаст (AuthService, *zap.Logger).
-			handler.NewAuthHandler,
-			handler.NewTaskHandler,
-			// ... Добавить TaskHandler позже ...
-
-			// 8. Echo инстанс (создаем и настраиваем)
-			NewEchoServer,
+            client.NewOrchestratorServiceClient, // gRPC Клиент Оркестратора
+            repository.NewPgxUserRepository,
+            service.NewAuthService,
+            service.NewTaskService, // TaskService Агента
+            handler.NewAuthHandler,
+            handler.NewTaskHandler,
+            NewEchoServer,
 		),
 
 		// Регистрируем Invoke функции, которые выполняют действия при старте/стопе.
@@ -194,6 +164,20 @@ func Run() {
 			protectedGroup.Use(jwtAuthMiddleware)
 
 			taskHandler.RegisterRoutes(protectedGroup)
+
+			agent_api.SwaggerInfo.Title = "API Калькулятора Выражений - Agent" // Можно переопределить из main.go
+            agent_api.SwaggerInfo.Description = "Документация API для Agent сервиса."
+            agent_api.SwaggerInfo.Version = "1.0"
+            agent_api.SwaggerInfo.Host = fmt.Sprintf("localhost:%s", cfg.Server.Port) // Используем порт из конфига
+            agent_api.SwaggerInfo.BasePath = "/api/v1"
+            agent_api.SwaggerInfo.Schemes = []string{"http", "https"}
+
+
+            // Маршрут для Swagger UI
+            // Swagger UI будет доступен по /swagger/index.html
+            // (или просто /swagger/ если echo-swagger настроен так)
+            e.GET("/swagger/*", echoSwagger.WrapHandler)
+            log.Info("Swagger UI доступен по /swagger/index.html", zap.String("host", agent_api.SwaggerInfo.Host))
 
 			// --- Запуск HTTP сервера и Graceful Shutdown ---
 			// Создаем HTTP сервер стандартной библиотеки Go.

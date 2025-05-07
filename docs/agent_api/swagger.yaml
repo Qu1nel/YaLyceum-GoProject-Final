@@ -1,0 +1,293 @@
+basePath: /api/v1
+definitions:
+  handler.CalculateRequest:
+    properties:
+      expression:
+        description: Математическое выражение для вычисления
+        example: (2+2)*4
+        type: string
+    required:
+    - expression
+    type: object
+  handler.CalculateResponse:
+    properties:
+      task_id:
+        description: Уникальный идентификатор созданной задачи
+        example: a1b2c3d4-e5f6-7890-1234-567890abcdef
+        type: string
+    type: object
+  handler.ErrorResponse:
+    properties:
+      error:
+        description: Текстовое описание ошибки
+        example: Сообщение об ошибке
+        type: string
+    type: object
+  handler.LoginRequest:
+    properties:
+      login:
+        example: user123
+        type: string
+      password:
+        example: password
+        type: string
+    type: object
+  handler.LoginResponse:
+    properties:
+      token:
+        description: JWT токен доступа
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2...
+        type: string
+    type: object
+  handler.RegisterRequest:
+    properties:
+      login:
+        description: Логин пользователя, от 3 до 30 символов (буквы, цифры, '_')
+        example: newuser123
+        type: string
+      password:
+        description: Пароль пользователя, минимум 6 символов
+        example: P@$$wOrd123
+        type: string
+    type: object
+  service.TaskDetails:
+    properties:
+      created_at:
+        type: string
+      error_message:
+        type: string
+      expression:
+        type: string
+      id:
+        type: string
+      result:
+        description: omitempty, если nil
+        type: number
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  service.TaskListItem:
+    properties:
+      created_at:
+        type: string
+      expression:
+        type: string
+      id:
+        type: string
+      status:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: covach.qn@gmail.com
+    name: Ivan Kovach (Qu1nel)
+    url: https://github.com/Qu1nel
+  description: Этот сервис является точкой входа для пользователей Калькулятора Выражений.
+    Он отвечает за аутентификацию, авторизацию и прием задач на вычисление, которые
+    затем передаются в Оркестратор.
+  license:
+    name: MIT License
+    url: https://github.com/Qu1nel/YaLyceum-GoProject-Final/blob/main/LICENSE
+  title: API Агента для Калькулятора Выражений
+  version: 1.0.0
+paths:
+  /calculate:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Принимает арифметическое выражение от аутентифицированного пользователя, создает задачу и ставит ее в очередь на асинхронное вычисление.
+        В случае успеха возвращает ID созданной задачи. Статус задачи изначально будет "pending".
+      parameters:
+      - description: Объект с математическим выражением
+        in: body
+        name: тело_запроса
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CalculateRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Запрос успешно принят, задача поставлена в очередь. Возвращается
+            ID задачи.
+          schema:
+            $ref: '#/definitions/handler.CalculateResponse'
+        "400":
+          description: 'Ошибка валидации: неверный формат запроса, пустое или некорректное
+            выражение.'
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: 'Ошибка аутентификации: JWT токен отсутствует, невалиден или
+            истек.'
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера при создании задачи или взаимодействии
+            с другими сервисами.
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Отправить выражение на вычисление
+      tags:
+      - Задачи
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: Аутентифицирует пользователя по логину и паролю и возвращает JWT
+        токен доступа.
+      parameters:
+      - description: Логин и пароль пользователя для входа
+        in: body
+        name: учетные_данные
+        required: true
+        schema:
+          $ref: '#/definitions/handler.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: JWT токен для доступа к защищенным эндпоинтам
+          schema:
+            $ref: '#/definitions/handler.LoginResponse'
+        "400":
+          description: Неверный формат запроса.
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: 'Ошибка аутентификации: неверный логин или пароль.'
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера при попытке входа.
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Вход пользователя в систему
+      tags:
+      - Аутентификация
+  /register:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Создает новый аккаунт пользователя с указанными логином и паролем.
+        Пароль будет сохранен в хешированном виде (bcrypt).
+      parameters:
+      - description: Логин и пароль пользователя для регистрации
+        in: body
+        name: данные_регистрации
+        required: true
+        schema:
+          $ref: '#/definitions/handler.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Сообщение об успешной регистрации (например, {\"message\":\"Пользователь
+            успешно зарегистрирован\"})
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: 'Ошибка валидации: неверный формат логина или пароля, или неверное
+            тело запроса.'
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: 'Конфликт: пользователь с таким логином уже существует.'
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера при попытке регистрации.
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Регистрация нового пользователя
+      tags:
+      - Аутентификация
+  /tasks:
+    get:
+      description: |-
+        Возвращает список всех задач (с краткой информацией), созданных текущим аутентифицированным пользователем.
+        Задачи отсортированы по времени создания (сначала новые). Пагинация пока не реализована.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Массив объектов с краткой информацией о задачах.
+          schema:
+            items:
+              $ref: '#/definitions/service.TaskListItem'
+            type: array
+        "401":
+          description: 'Ошибка аутентификации: JWT токен отсутствует, невалиден или
+            истек.'
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера при получении списка задач.
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Получить список задач пользователя
+      tags:
+      - Задачи
+  /tasks/{id}:
+    get:
+      description: Возвращает полную информацию о задаче по её ID, если она принадлежит
+        текущему аутентифицированному пользователю.
+      parameters:
+      - description: ID Задачи (в формате UUID)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Объект с полной информацией о задаче.
+          schema:
+            $ref: '#/definitions/service.TaskDetails'
+        "400":
+          description: Невалидный формат ID задачи (не UUID).
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: 'Ошибка аутентификации: JWT токен отсутствует, невалиден или
+            истек.'
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Задача с указанным ID не найдена или не принадлежит текущему
+            пользователю.
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Внутренняя ошибка сервера при получении деталей задачи.
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Получить детали конкретной задачи
+      tags:
+      - Задачи
+schemes:
+- http
+- https
+securityDefinitions:
+  BearerAuth:
+    description: |-
+      JWT токен авторизации. Формат: "Bearer <токен>"
+      Пример: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
