@@ -27,9 +27,9 @@ import (
 var (
 	testAgentBaseURL         string
 	testPostgresDSN          string
-	testOrchestratorGRPCPort string = "50071" // Другие порты для избежания конфликтов
-	testWorkerGRPCPort       string = "50072"
-	testAgentHTTPPort        string = "8095" // Еще один уникальный порт для агента в тестах
+	testOrchestratorGRPCPort string = "50217" // Другие порты для избежания конфликтов
+	testWorkerGRPCPort       string = "50218"
+	testAgentHTTPPort        string = "8043" // Еще один уникальный порт для агента в тестах
 )
 
 func TestMain(m *testing.M) {
@@ -62,11 +62,11 @@ func TestMain(m *testing.M) {
 
 	// Переменные для Воркера
 	os.Setenv("WORKER_GRPC_PORT", testWorkerGRPCPort)
-    os.Setenv("TIME_ADDITION_MS", "10ms") // Убедись, что эти переменные читаются в worker/config.Load()
-    os.Setenv("TIME_SUBTRACTION_MS", "10ms")
-    os.Setenv("TIME_MULTIPLICATION_MS", "10ms")
-    os.Setenv("TIME_DIVISION_MS", "10ms")
-    os.Setenv("TIME_EXPONENTIATION_MS", "10ms")
+    os.Setenv("TIME_ADDITION_MS", "50ms") // Убедись, что эти переменные читаются в worker/config.Load()
+    os.Setenv("TIME_SUBTRACTION_MS", "50ms")
+    os.Setenv("TIME_MULTIPLICATION_MS", "50ms")
+    os.Setenv("TIME_DIVISION_MS", "50ms")
+    os.Setenv("TIME_EXPONENTIATION_MS", "50ms")
 
 	// Переменные для Агента
 	os.Setenv("AGENT_HTTP_PORT", testAgentHTTPPort)
@@ -80,7 +80,6 @@ func TestMain(m *testing.M) {
 	go func() {
 		defer func() { if r := recover(); r != nil { log.Printf("Паника в тестовом Оркестраторе: %v\n", r) }; close(orchestratorReady) }()
 		log.Println("Запуск тестового Оркестратора...")
-		// config.Load() будет вызван снова внутри app.Run() через Fx, но переменные окружения уже должны быть установлены
 		orchestrator_app.Run()
 		log.Println("Тестовый Оркестратор завершил работу")
 	}()
@@ -92,8 +91,7 @@ func TestMain(m *testing.M) {
 		log.Println("Тестовый Воркер завершил работу")
 	}()
 
-    // Даем немного времени Оркестратору и Воркеру на старт, прежде чем Агент попытается к ним подключиться
-	time.Sleep(1 * time.Second) // Можно уменьшить, если они быстро стартуют
+	time.Sleep(3 * time.Second)
 
 	go func() {
 		defer func() { if r := recover(); r != nil { log.Printf("Паника в тестовом Агенте: %v\n", r) }; close(agentReady) }()
@@ -102,7 +100,7 @@ func TestMain(m *testing.M) {
 		log.Println("Тестовый Агент завершил работу")
 	}()
 
-	time.Sleep(1 * time.Second) // Даем время Агенту запуститься
+	time.Sleep(1 * time.Second)
 	testAgentBaseURL = fmt.Sprintf("http://localhost:%s/api/v1", testAgentHTTPPort)
 	log.Printf("Тестовый Агент запущен, URL: %s\n", testAgentBaseURL)
 
@@ -110,7 +108,7 @@ func TestMain(m *testing.M) {
 
 	log.Println("Завершение работы тестовых сервисов (отмена контекста)...")
 	cancel()
-	time.Sleep(3 * time.Second) // Увеличим немного время на корректное завершение
+	time.Sleep(3 * time.Second)
 
 	log.Println("Остановка PostgreSQL контейнера...")
 	if err := pgContainer.Terminate(context.Background()); err != nil {
@@ -122,28 +120,23 @@ func TestMain(m *testing.M) {
 }
 
 func setupPostgres(ctx context.Context) (*postgres.PostgresContainer, string, error) {
-	// Используем стандартные имя пользователя/пароль/БД, которые заданы в модуле postgres
-	// Это "test", "test", "test"
 	pgContainer, err := postgres.Run(ctx,
 		"postgres:15-alpine", // Имя образа
-		postgres.WithDatabase("testdb_integration"),   // Можем указать другое имя БД для тестов
-		postgres.WithUsername("testuser_int"),       // Другой пользователь
-		postgres.WithPassword("testpassword_int"),   // Другой пароль
+		postgres.WithDatabase("testdb_integration"),
+		postgres.WithUsername("testuser_int"),
+		postgres.WithPassword("testpassword_int"),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2). // Ждем второго такого сообщения (после initdb)
-				WithStartupTimeout(15*time.Second), // Немного увеличим таймаут на всякий случай
+				WithOccurrence(2).
+				WithStartupTimeout(15*time.Second),
 		),
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("не удалось запустить postgres контейнер: %w", err)
 	}
 
-	// Получаем DSN для подключения к этому контейнеру
-	// ConnectionString вернет URI, подходящий для database/sql и pgxpool.ParseConfig
 	dsn, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		// Если ошибка, пытаемся остановить контейнер
 		if termErr := pgContainer.Terminate(context.Background()); termErr != nil {
 			log.Printf("Ошибка при попытке остановить pgContainer после ошибки ConnectionString: %v", termErr)
 		}
@@ -158,19 +151,13 @@ func runMigrations(dsn string) error {
 	if err != nil {
 		return fmt.Errorf("не удалось найти корень проекта для миграций: %w", err)
 	}
-	// Получаем абсолютный путь к директории миграций
 	absMigrationsPath, err := filepath.Abs(filepath.Join(projectRoot, "migrations"))
 	if err != nil {
 		return fmt.Errorf("не удалось получить абсолютный путь к миграциям: %w", err)
 	}
 
-	// Формируем URL для migrate.
-	// Для source "file", URL должен быть просто "file://<path>"
-	// где <path> это путь к директории с миграциями.
-	// filepath.ToSlash важен для Windows, чтобы заменить '\' на '/'.
 	migrationsURL := "file://" + filepath.ToSlash(absMigrationsPath)
 
-	// DSN для migrate (pgx5)
 	migrateDSN := strings.Replace(dsn, "postgresql://", "pgx5://", 1)
     if !strings.HasPrefix(migrateDSN, "pgx5://") && strings.HasPrefix(dsn, "postgres://") {
          migrateDSN = strings.Replace(dsn, "postgres://", "pgx5://", 1)
@@ -189,10 +176,9 @@ func runMigrations(dsn string) error {
 
 	log.Println("Попытка применить миграции (m.Up)...")
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		log.Printf("Ошибка применения миграций (m.Up): %v", err) // Более детальный лог
-		// Попробуем получить ошибки источника и БД для большей детализации
+		log.Printf("Ошибка применения миграций (m.Up): %v", err)
 		var srcErrText, dbErrText string
-		srcErr, dbErr := m.Close() // m.Close() возвращает две ошибки
+		srcErr, dbErr := m.Close()
 		if srcErr != nil {
 			srcErrText = srcErr.Error()
 			log.Printf("Ошибка закрытия источника миграций (после ошибки Up): %v", srcErr)
@@ -204,8 +190,7 @@ func runMigrations(dsn string) error {
 		return fmt.Errorf("ошибка применения миграций (m.Up): %w. SourceErr: %s, DBErr: %s", err, srcErrText, dbErrText)
 	}
 
-	// Закрываем соединение с БД и источник миграций
-	srcErrClose, dbErrClose := m.Close() // Переименовал переменные
+	srcErrClose, dbErrClose := m.Close()
 	if srcErrClose != nil {
 		return fmt.Errorf("ошибка закрытия источника миграций: %w", srcErrClose)
 	}
@@ -217,19 +202,16 @@ func runMigrations(dsn string) error {
 }
 
 func getProjectRoot() (string, error) {
-    // ... (код getProjectRoot остается таким же) ...
     dir, err := os.Getwd()
     if err != nil {
         return "", err
     }
-    // Ищем go.mod, поднимаясь вверх по дереву каталогов
     for {
         if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-            return dir, nil // Нашли go.mod, это корень проекта
+            return dir, nil
         }
         parent := filepath.Dir(dir)
         if parent == dir {
-            // Дошли до корня файловой системы и не нашли go.mod
             return "", errors.New("не удалось найти go.mod в текущем или родительских каталогах")
         }
         dir = parent

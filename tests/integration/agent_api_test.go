@@ -1,0 +1,307 @@
+// Файл: tests/integration/agent_api_test.go
+package integration
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http" // Будем использовать для прямого вызова хендлера Агента, если понадобится, но лучше через HTTP клиент
+	"testing"
+	"time"
+
+	// Типы из Agent для запросов/ответов (если они экспортируемы и нужны)
+	// agent_handler "github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/handler"
+	// agent_service "github.com/Qu1nel/YaLyceum-GoProject-Final/internal/agent/service"
+
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/repository"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// Структуры для ответов API, которые мы ожидаем
+type RegisterResponse struct {
+    Message string `json:"message"`
+}
+type LoginResponse struct {
+    Token string `json:"token"`
+}
+type CalculateResponse struct {
+    TaskID string `json:"task_id"`
+}
+type ErrorResponse struct {
+    Error string `json:"error"`
+}
+type TaskDetailsResponse struct { // Упрощенная версия, т.к. полный TaskDetails в agent/service
+    ID         string    `json:"id"`
+    Expression string    `json:"expression"`
+    Status     string    `json:"status"`
+    Result     *float64  `json:"result,omitempty"`
+    ErrorMsg   *string   `json:"error_message,omitempty"`
+    CreatedAt  time.Time `json:"created_at"`
+    UpdatedAt  time.Time `json:"updated_at"`
+}
+
+
+// TestIntegration_RegisterLoginSubmitTask проверяет базовый сценарий
+func TestIntegration_RegisterLoginSubmitTask(t *testing.T) {
+	// TestMain уже всё настроил и запустил, testAgentBaseURL доступен
+	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	ctx := context.Background() // Для запросов
+
+	// --- Шаг 1: Регистрация ---
+	registerLogin := fmt.Sprintf("user_%d", time.Now().UnixNano()) // Уникальный логин
+	registerPassword := "password123"
+	registerPayload := map[string]string{"login": registerLogin, "password": registerPassword}
+	registerBody, _ := json.Marshal(registerPayload)
+
+	regReq, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/register", bytes.NewBuffer(registerBody))
+	regReq.Header.Set("Content-Type", "application/json")
+	
+	regResp, err := client.Do(regReq)
+	require.NoError(t, err, "Ошибка при запросе регистрации")
+	defer regResp.Body.Close()
+	assert.Equal(t, http.StatusOK, regResp.StatusCode, "Ожидался статус 200 OK при регистрации")
+
+	var regResponseData RegisterResponse
+	err = json.NewDecoder(regResp.Body).Decode(&regResponseData)
+	require.NoError(t, err, "Ошибка декодирования ответа регистрации")
+	assert.Equal(t, "Пользователь успешно зарегистрирован", regResponseData.Message)
+	log.Printf("Интеграционный тест: Пользователь %s зарегистрирован.\n", registerLogin)
+
+
+	// --- Шаг 2: Логин ---
+	loginPayload := map[string]string{"login": registerLogin, "password": registerPassword}
+	loginBody, _ := json.Marshal(loginPayload)
+
+	loginReq, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/login", bytes.NewBuffer(loginBody))
+	loginReq.Header.Set("Content-Type", "application/json")
+
+	loginResp, err := client.Do(loginReq)
+	require.NoError(t, err, "Ошибка при запросе входа")
+	defer loginResp.Body.Close()
+	assert.Equal(t, http.StatusOK, loginResp.StatusCode, "Ожидался статус 200 OK при входе")
+
+	var loginResponseData LoginResponse
+	err = json.NewDecoder(loginResp.Body).Decode(&loginResponseData)
+	require.NoError(t, err, "Ошибка декодирования ответа входа")
+	require.NotEmpty(t, loginResponseData.Token, "Токен не должен быть пустым")
+	jwtToken := loginResponseData.Token
+	log.Printf("Интеграционный тест: Пользователь %s вошел, токен: %.10s...\n", registerLogin, jwtToken)
+
+
+	// --- Шаг 3: Отправка выражения на вычисление ---
+	expression := " (2 + 3) * 4 - 10 / 2 " // Выражение с пробелами, которые должны обработаться
+	calcPayload := map[string]string{"expression": expression}
+	calcBody, _ := json.Marshal(calcPayload)
+
+	calcReq, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/calculate", bytes.NewBuffer(calcBody))
+	calcReq.Header.Set("Content-Type", "application/json")
+	calcReq.Header.Set("Authorization", "Bearer "+jwtToken)
+
+	calcResp, err := client.Do(calcReq)
+	require.NoError(t, err, "Ошибка при запросе /calculate")
+	defer calcResp.Body.Close()
+
+    // Читаем тело ответа для логирования, если не 202
+    var calcResponseData CalculateResponse
+    var errorResponseData ErrorResponse
+    
+    respBodyBytes, _ := io.ReadAll(calcResp.Body) // Читаем тело один раз
+    // Восстанавливаем тело для последующего декодирования
+    calcResp.Body = io.NopCloser(bytes.NewBuffer(respBodyBytes))
+
+
+	if calcResp.StatusCode != http.StatusAccepted {
+        // Попытаемся декодировать как ошибку
+        if json.Unmarshal(respBodyBytes, &errorResponseData) == nil {
+             t.Fatalf("Ожидался статус 202 Accepted при /calculate, получен %d. Тело ошибки: %s", calcResp.StatusCode, errorResponseData.Error)
+        } else {
+             t.Fatalf("Ожидался статус 202 Accepted при /calculate, получен %d. Тело: %s", calcResp.StatusCode, string(respBodyBytes))
+        }
+    }
+	assert.Equal(t, http.StatusAccepted, calcResp.StatusCode, "Ожидался статус 202 Accepted при /calculate")
+
+	err = json.NewDecoder(calcResp.Body).Decode(&calcResponseData) // Теперь декодируем из восстановленного тела
+	require.NoError(t, err, "Ошибка декодирования ответа /calculate")
+	require.NotEmpty(t, calcResponseData.TaskID, "TaskID не должен быть пустым")
+	taskID := calcResponseData.TaskID
+	log.Printf("Интеграционный тест: Задача %s для выражения '%s' отправлена.\n", taskID, expression)
+
+
+	// --- Шаг 4: Проверка статуса задачи (ожидаем, что она быстро вычислится) ---
+	// Даем немного времени на асинхронное вычисление
+    // Сумма задержек: 10ms (сложение) + 10ms (умножение) + 10ms (деление) + 10ms (вычитание) = 40ms
+    // Плюс накладные расходы gRPC и БД. 1 секунды должно хватить.
+	time.Sleep(1 * time.Second)
+
+	taskDetailsURL := fmt.Sprintf("%s/tasks/%s", testAgentBaseURL, taskID)
+	detailsReq, _ := http.NewRequestWithContext(ctx, "GET", taskDetailsURL, nil)
+	detailsReq.Header.Set("Authorization", "Bearer "+jwtToken)
+
+	var taskDetails TaskDetailsResponse
+	maxAttempts := 5
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		detailsResp, err := client.Do(detailsReq.Clone(ctx)) // Клонируем запрос для повторных попыток
+		require.NoError(t, err, "Ошибка при запросе деталей задачи %s (попытка %d)", taskID, attempt)
+		defer detailsResp.Body.Close()
+
+        bodyBytes, _ := io.ReadAll(detailsResp.Body)
+        detailsResp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes)) // Восстанавливаем тело
+
+		if detailsResp.StatusCode != http.StatusOK {
+             var errResp ErrorResponse
+             if json.Unmarshal(bodyBytes, &errResp) == nil {
+                log.Printf("Попытка %d: Не удалось получить детали задачи %s, статус %d, ошибка: %s", attempt, taskID, detailsResp.StatusCode, errResp.Error)
+             } else {
+                log.Printf("Попытка %d: Не удалось получить детали задачи %s, статус %d, тело: %s", attempt, taskID, detailsResp.StatusCode, string(bodyBytes))
+             }
+             if attempt == maxAttempts {
+                 t.Fatalf("Не удалось получить детали задачи %s после %d попыток, последний статус %d", taskID, maxAttempts, detailsResp.StatusCode)
+             }
+             time.Sleep(time.Duration(attempt) * 500 * time.Millisecond) // Увеличивающаяся задержка
+             continue
+        }
+
+		err = json.NewDecoder(detailsResp.Body).Decode(&taskDetails)
+		require.NoError(t, err, "Ошибка декодирования деталей задачи %s (попытка %d)", taskID, attempt)
+
+		if taskDetails.Status == repository.StatusCompleted || taskDetails.Status == repository.StatusFailed {
+			break // Задача завершена
+		}
+
+		log.Printf("Попытка %d: Задача %s все еще в статусе '%s', ждем...", attempt, taskID, taskDetails.Status)
+		if attempt == maxAttempts {
+			t.Fatalf("Задача %s не перешла в финальный статус после %d попыток (текущий статус: %s)", taskID, maxAttempts, taskDetails.Status)
+		}
+		time.Sleep(time.Duration(attempt) * 500 * time.Millisecond) // Увеличивающаяся задержка
+	}
+
+	log.Printf("Интеграционный тест: Детали задачи %s: Статус=%s, Результат=%v, Ошибка=%v\n",
+		taskID, taskDetails.Status, taskDetails.Result, taskDetails.ErrorMsg)
+
+	assert.Equal(t, repository.StatusCompleted, taskDetails.Status, "Ожидался статус 'completed'")
+	require.NotNil(t, taskDetails.Result, "Результат не должен быть nil для завершенной задачи")
+	assert.InDelta(t, 15.0, *taskDetails.Result, 0.00001, "Результат вычисления некорректен") // (2+3)*4 - 10/2 = 5*4 - 5 = 20 - 5 = 15
+	assert.Nil(t, taskDetails.ErrorMsg, "Сообщение об ошибке должно быть nil для успешно завершенной задачи")
+}
+func TestIntegration_SubmitExpressionThatFailsAtEvaluation(t *testing.T) {
+	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
+	client := &http.Client{Timeout: 10 * time.Second}
+	ctx := context.Background()
+
+	// 1. Регистрация и логин
+	timestampSuffix := time.Now().UnixNano() % 100000
+	registerLogin := fmt.Sprintf("evalfail_usr_%d", timestampSuffix)
+	if len(registerLogin) > 30 {
+		registerLogin = registerLogin[:30]
+	}
+	registerPassword := "password123"
+
+	regPayload := map[string]string{"login": registerLogin, "password": registerPassword}
+	regBody, _ := json.Marshal(regPayload)
+	regReq, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/register", bytes.NewBuffer(regBody))
+	regReq.Header.Set("Content-Type", "application/json")
+	regResp, err := client.Do(regReq)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, regResp.StatusCode, "Регистрация должна вернуть 200")
+	regResp.Body.Close()
+
+	loginPayload := map[string]string{"login": registerLogin, "password": registerPassword}
+	loginBody, _ := json.Marshal(loginPayload)
+	loginReq, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/login", bytes.NewBuffer(loginBody))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp, err := client.Do(loginReq)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, loginResp.StatusCode, "Логин должен вернуть 200")
+	var loginData LoginResponse
+	err = json.NewDecoder(loginResp.Body).Decode(&loginData)
+	require.NoError(t, err)
+	loginResp.Body.Close()
+	jwtToken := loginData.Token
+	require.NotEmpty(t, jwtToken)
+
+	// 2. Отправляем выражение, которое expr распарсит, но наш Evaluator не сможет вычислить
+	// Например, унарный плюс, который мы не обрабатываем, или неизвестная функция.
+	// "2 +++ 3" expr может интерпретировать как "2+3".
+	// Давай используем выражение, которое точно вызовет ошибку в нашем ExpressionEvaluator,
+	// например, идентификатор (переменную), которую мы не поддерживаем.
+	// ИЛИ выражение, которое приведет к ошибке в Воркере, например, деление на ноль.
+	// expression := "a + 1" // Это вызовет ошибку парсинга в expr
+	expression := "1 / 0" // Это должно вызвать ошибку вычисления в Воркере
+
+	calcPayload := map[string]string{"expression": expression}
+	calcBody, _ := json.Marshal(calcPayload)
+
+	calcReq, _ := http.NewRequestWithContext(ctx, "POST", testAgentBaseURL+"/calculate", bytes.NewBuffer(calcBody))
+	calcReq.Header.Set("Content-Type", "application/json")
+	calcReq.Header.Set("Authorization", "Bearer "+jwtToken)
+
+	calcResp, err := client.Do(calcReq)
+	require.NoError(t, err, "Ошибка при запросе /calculate")
+	defer calcResp.Body.Close()
+
+	// Ожидаем 202, так как парсинг "1/0" в expr пройдет успешно
+	require.Equal(t, http.StatusAccepted, calcResp.StatusCode, "Ожидался статус 202 Accepted при /calculate")
+
+	var calcResponseData CalculateResponse
+	err = json.NewDecoder(calcResp.Body).Decode(&calcResponseData)
+	require.NoError(t, err, "Ошибка декодирования ответа /calculate")
+	require.NotEmpty(t, calcResponseData.TaskID, "TaskID не должен быть пустым")
+	taskID := calcResponseData.TaskID
+	log.Printf("Интеграционный тест (ошибка вычисления): Задача %s для '%s' отправлена.\n", taskID, expression)
+
+	// 3. Проверяем статус задачи, ожидаем 'failed' и сообщение об ошибке
+	time.Sleep(1 * time.Second) // Даем время на асинхронное вычисление
+
+	taskDetailsURL := fmt.Sprintf("%s/tasks/%s", testAgentBaseURL, taskID)
+	detailsReq, _ := http.NewRequestWithContext(ctx, "GET", taskDetailsURL, nil)
+	detailsReq.Header.Set("Authorization", "Bearer "+jwtToken)
+
+	var taskDetails TaskDetailsResponse
+	maxAttempts := 5
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		detailsResp, errAttempt := client.Do(detailsReq.Clone(ctx))
+		require.NoError(t, errAttempt)
+		
+		bodyBytes, _ := io.ReadAll(detailsResp.Body)
+        detailsResp.Body.Close() // Закрываем здесь
+        detailsResp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+
+		if detailsResp.StatusCode != http.StatusOK {
+			t.Fatalf("Ожидался статус 200 OK при запросе деталей задачи, получен %d. Тело: %s", detailsResp.StatusCode, string(bodyBytes))
+		}
+
+		errAttempt = json.NewDecoder(detailsResp.Body).Decode(&taskDetails)
+		require.NoError(t, errAttempt)
+
+		if taskDetails.Status == repository.StatusFailed {
+			break
+		}
+		if attempt == maxAttempts {
+			t.Fatalf("Задача %s не перешла в статус 'failed' после %d попыток (текущий статус: %s)", taskID, maxAttempts, taskDetails.Status)
+		}
+		log.Printf("Попытка %d: Задача %s (ошибка вычисления) в статусе '%s', ждем...", attempt, taskID, taskDetails.Status)
+		time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+	}
+
+	log.Printf("Интеграционный тест (ошибка вычисления): Детали задачи %s: Статус=%s, Ошибка=%v\n",
+		taskID, taskDetails.Status, taskDetails.ErrorMsg)
+
+	assert.Equal(t, repository.StatusFailed, taskDetails.Status, "Ожидался статус 'failed'")
+	require.NotNil(t, taskDetails.ErrorMsg, "Сообщение об ошибке не должно быть nil для задачи со статусом failed")
+	// Ожидаем ошибку, связанную с делением на ноль от воркера
+	assert.Contains(t, *taskDetails.ErrorMsg, "деление на ноль", "Ожидалось сообщение об ошибке деления на ноль")
+	assert.Nil(t, taskDetails.Result, "Результат должен быть nil для задачи со статусом failed")
+}
+
+// TODO: Добавить другие интеграционные тесты:
+// - Деление на ноль (ожидаем статус failed и сообщение об ошибке)
+// - Получение списка задач /tasks
+// - Доступ к чужой задаче
+// - Запросы без токена / с невалидным токеном

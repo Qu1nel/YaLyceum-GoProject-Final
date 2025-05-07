@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/repository"
@@ -130,6 +131,10 @@ func (s *OrchestratorServer) startEvaluation(taskID uuid.UUID, userID uuid.UUID,
     // 2. Вызвать рекурсивный вычислитель
     s.log.Debug("Начало рекурсивного вычисления AST", zap.Stringer("taskID", taskID))
     result, evalErr := s.evaluator.Evaluate(evalCtx, rootNode)
+	if strconv.FormatFloat(result, 'f', 6, 64) == "+Inf" || strconv.FormatFloat(result, 'f', 6, 64) == "-Inf" {
+		result = 0
+		evalErr = fmt.Errorf("деление на ноль")
+	}
     s.log.Debug("Рекурсивное вычисление AST завершено", zap.Stringer("taskID", taskID), zap.Error(evalErr))
 
 
@@ -154,7 +159,6 @@ func (s *OrchestratorServer) startEvaluation(taskID uuid.UUID, userID uuid.UUID,
             zap.Stringer("taskID", taskID),
             zap.Float64("result", result),
         )
-        // Обновить статус на "completed", записать результат
         dbUpdateCtx, dbCancel := context.WithTimeout(context.Background(), 5*time.Second)
         defer dbCancel()
         if updateErr := s.taskRepo.SetTaskResult(dbUpdateCtx, taskID, result); updateErr != nil {
