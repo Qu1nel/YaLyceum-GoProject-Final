@@ -12,24 +12,24 @@ import (
 	"go.uber.org/zap"
 )
 
+// CalculateRequest определяет тело запроса для вычисления выражения.
 type CalculateRequest struct {
-	Expression string `json:"expression" validate:"required"`
+	Expression string `json:"expression" validate:"required" example:"(2+2)*4"` // Математическое выражение для вычисления
 }
 
+// CalculateResponse определяет тело ответа при успешном приеме задачи на вычисление.
 type CalculateResponse struct {
-	TaskID string `json:"task_id"`
+	TaskID string `json:"task_id" example:"a1b2c3d4-e5f6-7890-1234-567890abcdef"` // Уникальный идентификатор созданной задачи
 }
 
+// TaskHandler обрабатывает HTTP запросы, связанные с задачами вычисления.
 type TaskHandler struct {
 	log         *zap.Logger
-	taskService service.TaskService // <-- Зависимость от сервиса задач
+	taskService service.TaskService
 }
 
-
-func NewTaskHandler(
-	log *zap.Logger,
-	taskService service.TaskService, // <-- Новая зависимость
-) *TaskHandler {
+// NewTaskHandler создает новый TaskHandler.
+func NewTaskHandler(log *zap.Logger, taskService service.TaskService) *TaskHandler {
 	return &TaskHandler{
 		log:         log,
 		taskService: taskService,
@@ -38,38 +38,33 @@ func NewTaskHandler(
 
 // Calculate godoc
 // @Summary Отправить выражение на вычисление
-// @Description Принимает арифметическое выражение от аутентифицированного пользователя и ставит его в очередь на вычисление.
-// @Tags Tasks
+// @Description Принимает арифметическое выражение от аутентифицированного пользователя, создает задачу и ставит ее в очередь на асинхронное вычисление.
+// @Description В случае успеха возвращает ID созданной задачи. Статус задачи изначально будет "pending".
+// @Tags Задачи
 // @Security BearerAuth
 // @Accept json
 // @Produce json
-// @Param body body CalculateRequest true "Выражение для вычисления"
-// @Success 202 {object} CalculateResponse "Запрос принят к обработке"
-// @Failure 400 {object} ErrorResponse "Неверный формат запроса или выражения"
-// @Failure 401 {object} ErrorResponse "Ошибка аутентификации (невалидный токен)"
-// @Failure 500 {object} ErrorResponse "Внутренняя ошибка сервера"
-// @Router /api/v1/calculate [post]
+// @Param тело_запроса body CalculateRequest true "Объект с математическим выражением"
+// @Success 202 {object} CalculateResponse "Запрос успешно принят, задача поставлена в очередь. Возвращается ID задачи."
+// @Failure 400 {object} ErrorResponse "Ошибка валидации: неверный формат запроса, пустое или некорректное выражение."
+// @Failure 401 {object} ErrorResponse "Ошибка аутентификации: JWT токен отсутствует, невалиден или истек."
+// @Failure 500 {object} ErrorResponse "Внутренняя ошибка сервера при создании задачи или взаимодействии с другими сервисами."
+// @Router /calculate [post]
 func (h *TaskHandler) Calculate(c echo.Context) error {
-	// 1. Извлекаем UserID из контекста, который был добавлен JWTAuth middleware.
 	userID, ok := middleware.GetUserIDFromContext(c)
 	if !ok {
-		// Эта ситуация не должна происходить, если middleware отработало корректно,
-		// но лучше проверить на всякий случай.
-		h.log.Error("Не удалось получить UserID из контекста в защищенном маршруте")
-		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Внутренняя ошибка сервера: отсутствует UserID"})
+		h.log.Error("Не удалось получить UserID из контекста в /calculate")
+		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Внутренняя ошибка сервера"})
 	}
 
-	// Логируем полученный UserID
 	h.log.Info("Получен запрос на вычисление", zap.String("userID", userID))
 
-	// 2. Привязываем тело запроса
 	var req CalculateRequest
 	if err := c.Bind(&req); err != nil {
 		h.log.Warn("Не удалось привязать тело запроса /calculate", zap.Error(err), zap.String("userID", userID))
 		return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Неверное тело запроса"})
 	}
 
-	// 3. TODO: Валидация выражения req.Expression (позже, возможно, на уровне сервиса Оркестратора)
 	if req.Expression == "" {
 		return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Поле 'expression' не может быть пустым"})
 	}
@@ -82,25 +77,31 @@ func (h *TaskHandler) Calculate(c echo.Context) error {
 	taskID, err := h.taskService.SubmitNewTask(c.Request().Context(), userID, req.Expression)
 	if err != nil {
 		h.log.Error("Ошибка от TaskService при SubmitNewTask", zap.Error(err), zap.String("userID", userID))
-		// Здесь можно добавить более специфичную обработку ошибок от сервиса, если нужно
-		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()}) // Передаем ошибку от сервиса
+        // Проверяем, не является ли это ошибкой InvalidArgument от Оркестратора (транслированной сервисом)
+        // и возвращаем 400, если это так.
+        // Это потребует от TaskService возвращать ошибку, которую можно так проверить,
+        // или более специфичные типы ошибок. Пока оставляем 500 для простоты.
+        // if strings.Contains(err.Error(), string(codes.InvalidArgument)) { // Грубая проверка
+        //    return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Ошибка в выражении: " + err.Error()})
+        // }
+		return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
 	}
 
 	h.log.Info("Задача успешно принята к обработке", zap.String("taskID", taskID), zap.String("userID", userID))
-
 	return c.JSON(http.StatusAccepted, CalculateResponse{TaskID: taskID})
 }
 
 // GetTasks godoc
 // @Summary Получить список задач пользователя
-// @Description Возвращает список всех задач, созданных текущим аутентифицированным пользователем.
-// @Tags Tasks
+// @Description Возвращает список всех задач (с краткой информацией), созданных текущим аутентифицированным пользователем.
+// @Description Задачи отсортированы по времени создания (сначала новые). Пагинация пока не реализована.
+// @Tags Задачи
 // @Security BearerAuth
 // @Produce json
-// @Success 200 {array} service.TaskListItem "Список задач"
-// @Failure 401 {object} ErrorResponse "Ошибка аутентификации"
-// @Failure 500 {object} ErrorResponse "Внутренняя ошибка сервера"
-// @Router /api/v1/tasks [get]
+// @Success 200 {array} service.TaskListItem "Массив объектов с краткой информацией о задачах."
+// @Failure 401 {object} ErrorResponse "Ошибка аутентификации: JWT токен отсутствует, невалиден или истек."
+// @Failure 500 {object} ErrorResponse "Внутренняя ошибка сервера при получении списка задач."
+// @Router /tasks [get]
 func (h *TaskHandler) GetTasks(c echo.Context) error {
     userID, ok := middleware.GetUserIDFromContext(c)
     if !ok {
@@ -115,8 +116,8 @@ func (h *TaskHandler) GetTasks(c echo.Context) error {
         return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
     }
 
-    if tasks == nil { // Сервис может вернуть nil, если задач нет (или []TaskListItem{})
-        tasks = []service.TaskListItem{} // Возвращаем пустой массив JSON, а не null
+    if tasks == nil {
+        tasks = []service.TaskListItem{} // Гарантируем возврат пустого массива JSON `[]` вместо `null`
     }
 
     return c.JSON(http.StatusOK, tasks)
@@ -124,17 +125,17 @@ func (h *TaskHandler) GetTasks(c echo.Context) error {
 
 // GetTaskByID godoc
 // @Summary Получить детали конкретной задачи
-// @Description Возвращает детали задачи по её ID, если она принадлежит текущему пользователю.
-// @Tags Tasks
+// @Description Возвращает полную информацию о задаче по её ID, если она принадлежит текущему аутентифицированному пользователю.
+// @Tags Задачи
 // @Security BearerAuth
 // @Produce json
-// @Param id path string true "ID Задачи (UUID)"
-// @Success 200 {object} service.TaskDetails "Детали задачи"
-// @Failure 400 {object} ErrorResponse "Невалидный ID задачи"
-// @Failure 401 {object} ErrorResponse "Ошибка аутентификации"
-// @Failure 404 {object} ErrorResponse "Задача не найдена или нет прав доступа"
-// @Failure 500 {object} ErrorResponse "Внутренняя ошибка сервера"
-// @Router /api/v1/tasks/{id} [get]
+// @Param id path string true "ID Задачи (в формате UUID)" example:"a1b2c3d4-e5f6-7890-1234-567890abcdef"
+// @Success 200 {object} service.TaskDetails "Объект с полной информацией о задаче."
+// @Failure 400 {object} ErrorResponse "Невалидный формат ID задачи (не UUID)."
+// @Failure 401 {object} ErrorResponse "Ошибка аутентификации: JWT токен отсутствует, невалиден или истек."
+// @Failure 404 {object} ErrorResponse "Задача с указанным ID не найдена или не принадлежит текущему пользователю."
+// @Failure 500 {object} ErrorResponse "Внутренняя ошибка сервера при получении деталей задачи."
+// @Router /tasks/{id} [get]
 func (h *TaskHandler) GetTaskByID(c echo.Context) error {
     userID, ok := middleware.GetUserIDFromContext(c)
     if !ok {
@@ -143,15 +144,16 @@ func (h *TaskHandler) GetTaskByID(c echo.Context) error {
     }
 
     taskIDStr := c.Param("id")
-    if _, err := uuid.Parse(taskIDStr); err != nil { // Валидация формата UUID
+    if _, err := uuid.Parse(taskIDStr); err != nil {
+        h.log.Warn("Запрос деталей задачи с невалидным форматом ID", zap.String("taskID_str", taskIDStr), zap.Error(err))
         return c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Невалидный формат ID задачи"})
     }
 
     h.log.Info("Запрос деталей задачи", zap.String("userID", userID), zap.String("taskID", taskIDStr))
     taskDetails, err := h.taskService.GetTaskDetails(c.Request().Context(), userID, taskIDStr)
     if err != nil {
-        h.log.Error("Ошибка от TaskService при GetTaskDetails", zap.Error(err), zap.String("userID", userID), zap.String("taskID", taskIDStr))
-        if errors.Is(err, service.ErrTaskNotFound) { // Проверяем нашу кастомную ошибку
+        h.log.Warn("Ошибка от TaskService при GetTaskDetails", zap.Error(err), zap.String("userID", userID), zap.String("taskID", taskIDStr))
+        if errors.Is(err, service.ErrTaskNotFound) {
             return c.JSON(http.StatusNotFound, ErrorResponse{Error: err.Error()})
         }
         return c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
@@ -160,8 +162,7 @@ func (h *TaskHandler) GetTaskByID(c echo.Context) error {
     return c.JSON(http.StatusOK, taskDetails)
 }
 
-
-// RegisterRoutes теперь регистрирует все маршруты для задач.
+// RegisterRoutes регистрирует маршруты для задач.
 func (h *TaskHandler) RegisterRoutes(protectedGroup *echo.Group) {
 	protectedGroup.POST("/calculate", h.Calculate)
 	protectedGroup.GET("/tasks", h.GetTasks)
