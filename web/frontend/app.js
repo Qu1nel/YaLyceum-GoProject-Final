@@ -1,8 +1,6 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // URL нашего API
   const API_BASE_URL = "http://localhost:8080/api/v1"; 
 
-  // Элементы DOM
   const messagesDiv = document.getElementById("messages");
 
   const authSection = document.getElementById("authSection");
@@ -23,19 +21,15 @@ document.addEventListener("DOMContentLoaded", () => {
   const taskListUl = document.getElementById("taskList");
   const taskDetailsViewDiv = document.getElementById("taskDetailsView");
 
-  // Элементы для темы
   const themeToggleButton = document.getElementById("themeToggleButton");
   const themeIconMoon = document.getElementById("themeIconMoon");
   const themeIconSun = document.getElementById("themeIconSun");
   const bodyElement = document.body;
 
-  // --- Инициализация переменных состояния ---
   let jwtToken = localStorage.getItem("jwtToken");
-  // let currentUserID = localStorage.getItem("userID"); // Не используется активно на клиенте
   let currentUserLogin = localStorage.getItem("userLogin");
-  let currentTheme = localStorage.getItem("theme") || "light"; // По умолчанию светлая тема
+  let currentTheme = localStorage.getItem("theme") || "light";
 
-  // --- Логика Переключения Тем ---
   function applyTheme(theme) {
     bodyElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
@@ -59,29 +53,20 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // --- Функции для отображения сообщений ---
   function showMessage(message, type = "success") {
-    // Добавляем проверку существования messagesDiv
     if (!messagesDiv) {
         console.warn("Элемент для сообщений (messagesDiv) не найден.");
         return;
     }
     messagesDiv.textContent = message;
-    // Убедимся, что сначала удаляются все классы типов, а потом добавляется нужный
-    messagesDiv.classList.remove('success', 'error', 'hidden'); // Удаляем все возможные классы
-    messagesDiv.classList.add(type); // 'success' или 'error'
+    messagesDiv.classList.remove('success', 'error', 'hidden');
+    messagesDiv.classList.add(type);
     
     setTimeout(() => {
       messagesDiv.classList.add("hidden");
-      // Не обязательно очищать textContent и className здесь, 
-      // т.к. при следующем вызове showMessage они перезапишутся.
-      // Но если хочется "чистоты" после скрытия:
-      // messagesDiv.textContent = "";
-      // messagesDiv.className = ""; 
     }, 5000);
   }
 
-  // --- Функции для работы с API ---
   async function apiRequest(endpoint, method = "GET", body = null, requiresAuth = false) {
     const headers = { "Content-Type": "application/json" };
     if (requiresAuth && jwtToken) {
@@ -99,7 +84,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
-      // Попытка парсить JSON, или пустой объект при ошибке ИЛИ если тело ответа пустое (например, для 204 No Content)
       const responseData = response.status !== 204 ? await response.json().catch(() => ({})) : {};
 
 
@@ -115,9 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // --- Логика Аутентификации ---
   function updateAuthState() {
-    // Добавляем проверки существования элементов перед манипуляциями
     if (jwtToken && currentUserLogin) {
       if (authSection) authSection.classList.add("hidden");
       if (calculatorSection) calculatorSection.classList.remove("hidden");
@@ -135,13 +117,12 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
   
-  // Обработчики событий только если элементы существуют
   if (showLoginLink) {
     showLoginLink.addEventListener("click", (e) => {
       e.preventDefault();
       if (registerFormContainer) registerFormContainer.classList.add("hidden");
       if (loginFormContainer) loginFormContainer.classList.remove("hidden");
-      if (messagesDiv) messagesDiv.classList.add("hidden"); // Скрываем сообщения при переключении форм
+      if (messagesDiv) messagesDiv.classList.add("hidden");
     });
   }
 
@@ -150,7 +131,7 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       if (loginFormContainer) loginFormContainer.classList.add("hidden");
       if (registerFormContainer) registerFormContainer.classList.remove("hidden");
-      if (messagesDiv) messagesDiv.classList.add("hidden"); // Скрываем сообщения при переключении форм
+      if (messagesDiv) messagesDiv.classList.add("hidden");
     });
   }
 
@@ -159,7 +140,7 @@ document.addEventListener("DOMContentLoaded", () => {
       e.preventDefault();
       const loginInput = document.getElementById("registerLogin");
       const passwordInput = document.getElementById("registerPassword");
-      if (!loginInput || !passwordInput) return; // Доп. проверка
+      if (!loginInput || !passwordInput) return;
 
       const login = loginInput.value;
       const password = passwordInput.value;
@@ -167,9 +148,8 @@ document.addEventListener("DOMContentLoaded", () => {
         await apiRequest("/register", "POST", { login, password });
         showMessage("Регистрация прошла успешно! Теперь вы можете войти.", "success");
         registerForm.reset();
-        if (showLoginLink) showLoginLink.click(); // Автоматически переключаем на форму входа
+        if (showLoginLink) showLoginLink.click();
       } catch (error) {
-        // Сообщение об ошибке уже показано apiRequest
       }
     });
   }
@@ -193,7 +173,6 @@ document.addEventListener("DOMContentLoaded", () => {
         loginForm.reset();
         updateAuthState();
       } catch (error) {
-        // Сообщение об ошибке уже показано apiRequest
       }
     });
   }
@@ -209,7 +188,6 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // --- Логика Калькулятора и Задач ---
   if (expressionForm) {
     expressionForm.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -226,7 +204,6 @@ document.addEventListener("DOMContentLoaded", () => {
         expressionForm.reset();
         fetchTasks(); 
       } catch (error) {
-        // Сообщение об ошибке уже показано apiRequest
       }
     });
   }
@@ -237,7 +214,6 @@ document.addEventListener("DOMContentLoaded", () => {
       const tasks = await apiRequest("/tasks", "GET", null, true);
       renderTasks(tasks);
     } catch (error) {
-      // Сообщение об ошибке уже показано apiRequest
     }
   }
 
@@ -247,11 +223,11 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!tasks || tasks.length === 0) {
       const li = document.createElement('li');
       li.textContent = 'У вас пока нет задач.';
-      li.classList.add('no-tasks'); // Для возможной стилизации
+      li.classList.add('no-tasks');
       taskListUl.appendChild(li);
       return;
     }
-    tasks.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)); // Сортировка по дате создания (новые сверху)
+    tasks.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
     tasks.forEach((task) => {
       const li = document.createElement("li");
@@ -286,7 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
   async function fetchTaskDetails(taskId) {
     if (!jwtToken || !taskDetailsViewDiv) return;
     
-    taskDetailsViewDiv.innerHTML = "<p>Загрузка деталей задачи...</p>"; // Показываем загрузку
+    taskDetailsViewDiv.innerHTML = "<p>Загрузка деталей задачи...</p>";
     taskDetailsViewDiv.classList.remove("hidden");
 
 
@@ -307,7 +283,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (task.status === "completed" && task.result !== null && task.result !== undefined) {
       resultHtml = `<strong>${task.result}</strong>`;
     } else if (task.status === "failed" && task.error_message) {
-      resultHtml = `<span class="error-text">${task.error_message}</span>`; // Используем класс для стилизации
+      resultHtml = `<span class="error-text">${task.error_message}</span>`; 
     } else if (task.status === "processing") {
       resultHtml = "Вычисляется...";
     } else if (task.status === "pending") {
@@ -324,7 +300,6 @@ document.addEventListener("DOMContentLoaded", () => {
             <p><strong>Создана:</strong> ${new Date(task.created_at).toLocaleString("ru-RU", { dateStyle: 'short', timeStyle: 'short' })}</p>
             <p><strong>Обновлена:</strong> ${new Date(task.updated_at).toLocaleString("ru-RU", { dateStyle: 'short', timeStyle: 'short' })}</p>
         `;
-    // Убедимся, что блок видим, если до этого был скрыт (хотя fetchTaskDetails уже это делает)
     taskDetailsViewDiv.classList.remove("hidden");
   }
 
@@ -332,7 +307,6 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshTasksButton.addEventListener("click", fetchTasks);
   }
 
-  // --- Инициализация при загрузке страницы ---
-  applyTheme(currentTheme); // Применяем сохраненную или дефолтную тему
-  updateAuthState(); // Обновляем состояние аутентификации (и загружаем задачи, если залогинен)
+  applyTheme(currentTheme);
+  updateAuthState();
 });

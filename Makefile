@@ -1,80 +1,59 @@
-# Colors
 RED=\033[0;31m
 GREEN=\033[1;32m
 YELLOW=\033[1;33m
 BLUE=\033[0;36m
 RESET=\033[0m
 
-# Go command and test flags
 GO_CMD := go
 GO_TEST_FLAGS := -v -count=1
 GO_COVER_FLAGS := -cover -coverprofile=coverage.out
 GO_COVER_HTML_FLAGS := -html=coverage.out -o coverage.html
 
-# OS Detection and UNIT_TEST_PACKAGES definition
 DEFAULT_UNIT_TEST_PACKAGES := ./internal/agent/service ./internal/orchestrator/grpc_handler ./internal/orchestrator/repository ./internal/orchestrator/service ./internal/worker/grpc_handler ./internal/worker/service
-
-# Try to determine OS
 UNAME_S := $(shell uname -s 2>/dev/null || echo Unknown)
 
 ifeq ($(OS),Windows_NT)
-    # We are on Windows
-    # PowerShell command to find packages with _test.go files (more complex to integrate robustly)
-    # For simplicity, we'll use the fixed list on Windows by default or if find is not available.
-    # If you have 'find' (e.g., via Git Bash/MSYS2 on Windows), the next block might work.
-    # You can force the find command by setting FORCE_FIND_ON_WINDOWS=true
-    # UNIT_TEST_PACKAGES_CMD := powershell -Command "(Get-ChildItem -Path ./internal -Recurse -Filter *_test.go | ForEach-Object { Split-Path $_.DirectoryName -NoQualifier } | Sort-Object -Unique) -join ' '"
     UNIT_TEST_PACKAGES := $(DEFAULT_UNIT_TEST_PACKAGES)
 else ifeq ($(UNAME_S),Linux)
-    # Linux: find should be available
     UNIT_TEST_PACKAGES_CMD := find ./internal -name '*_test.go' -print0 | xargs -0 -n1 dirname | sort -u | sed 's|^\./|./|'
     UNIT_TEST_PACKAGES := $(shell $(UNIT_TEST_PACKAGES_CMD))
 else ifeq ($(UNAME_S),Darwin)
-    # macOS: find should be available
     UNIT_TEST_PACKAGES_CMD := find ./internal -name '*_test.go' -print0 | xargs -0 -n1 dirname | sort -u | sed 's|^\./|./|'
     UNIT_TEST_PACKAGES := $(shell $(UNIT_TEST_PACKAGES_CMD))
 else
-    # Fallback for other OS or if 'find' is preferred and available (e.g. Git Bash on Windows)
-    # Check if 'find' command exists
     ifneq ($(shell which find 2>/dev/null),)
         UNIT_TEST_PACKAGES_CMD := find ./internal -name '*_test.go' -print0 | xargs -0 -n1 dirname | sort -u | sed 's|^\./|./|'
         UNIT_TEST_PACKAGES := $(shell $(UNIT_TEST_PACKAGES_CMD))
     else
-        # If find is not available, use go list with grep (requires grep) or default fixed list
-        # This grep might not be available on all systems (especially plain Windows cmd)
         UNIT_TEST_PACKAGES_GREP_CMD := $(GO_CMD) list ./internal/... | grep -v '/mocks' || echo "$(DEFAULT_UNIT_TEST_PACKAGES)"
         UNIT_TEST_PACKAGES := $(shell $(UNIT_TEST_PACKAGES_GREP_CMD))
     endif
 endif
 
-# If UNIT_TEST_PACKAGES ended up empty for some reason, use the default
 ifeq ($(strip $(UNIT_TEST_PACKAGES)),)
     UNIT_TEST_PACKAGES := $(DEFAULT_UNIT_TEST_PACKAGES)
 endif
 
 
-# Default ports if not found in .env
 DEFAULT_FRONTEND_PORT := 80
 DEFAULT_AGENT_HTTP_PORT := 8080
 
-# Function to get port from .env or use default.
-# This relies on shell commands that might not be available on plain Windows CMD.
-# Works best with shells like Bash, Zsh, or Git Bash on Windows.
 get_env_port = $(shell test -f .env && grep -E "^$(1)=" .env | grep -v '^\s*#' | cut -d'=' -f2- | cut -d'#' -f1 | tr -d '[:space:]' || echo "$(2)")
 
 FRONTEND_PORT := $(call get_env_port,FRONTEND_PORT,$(DEFAULT_FRONTEND_PORT))
 AGENT_HTTP_PORT := $(call get_env_port,AGENT_HTTP_PORT,$(DEFAULT_AGENT_HTTP_PORT))
 
 
-# Utilities
 DOCKER_COMPOSE := docker-compose
 DOCKER := docker
 
-# Default target
 .DEFAULT_GOAL := help
+
 
 # Main commands
 ##############################################################################
+
+
 .PHONY: help up ps ps-a down start stop build build-% logs logs-% \
         test test-unit test-integration test-coverage test-coverage-html \
         clean check-docker
@@ -137,8 +116,11 @@ logs-%: check-docker ## Show logs for a specific service (e.g., make logs-agent)
 	@echo -e "$(YELLOW)Following logs for '$*' (press Ctrl+C to exit)...$(RESET)"
 	@$(DOCKER_COMPOSE) logs -f $*
 
+
 # Testing commands
 ##############################################################################
+
+
 test: test-unit test-integration ## Run all tests (unit and integration)
 	@echo -e "$(GREEN)All tests completed!$(RESET)" # Changed message slightly
 
@@ -177,8 +159,11 @@ test-coverage-html: test-coverage ## Generate HTML coverage report from coverage
 		echo -e "$(YELLOW)Open '$(GREEN)coverage.html$(YELLOW)' in your browser to view the report.$(RESET)"; \
 	fi
 
+
 # Clean commands
 ##############################################################################
+
+
 clean: ## Clean Go build cache and test cache, remove coverage files
 	@echo -e "$(YELLOW)Cleaning Go build cache, test cache, and coverage files...$(RESET)"
 	@$(GO_CMD) clean -cache
@@ -186,16 +171,22 @@ clean: ## Clean Go build cache and test cache, remove coverage files
 	@rm -f coverage.out coverage.html
 	@echo -e "$(GREEN)Cache and coverage files cleaned.$(RESET)"
 
+
 # Helper commands
 ##############################################################################
+
+
 .PHONY: check-docker
 
 check-docker: ## Check if docker-compose and Docker daemon are available
 	@which $(DOCKER_COMPOSE) > /dev/null || (echo -e "$(RED)Error: '$(DOCKER_COMPOSE)' not found! Please install Docker Compose.$(RESET)" && exit 1)
 	@$(DOCKER) info > /dev/null 2>&1 || (echo -e "$(RED)Error: Docker daemon not running or unavailable! Please start Docker.$(RESET)" && exit 1)
 
+
 # Help command (same as before, can be kept)
 ##############################################################################
+
+
 help:
 	@echo ""
 	@echo -e "  $(BLUE)Distributed Expression Calculator - Makefile Help$(RESET)"
@@ -237,6 +228,8 @@ help:
 
 # Debugging commands
 ##############################################################################
+
+
 print-%: ## Print the value of any Makefile variable (e.g., make print-GO_CMD)
 	@echo -e "$(BLUE)$*$(RESET) = $($(*))"
 

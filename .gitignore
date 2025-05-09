@@ -18,7 +18,7 @@
 go.work
 go.work.sum
 
-# Environment file (ВАЖНО: не хранить секреты в репозитории!)
+# Environment file
 .env
 
 # IDE settings/metadata
