@@ -10,13 +10,13 @@ import (
 )
 
 type Claims struct {
-	jwt.RegisteredClaims        
-	UserID               string `json:"user_id"` 
+	jwt.RegisteredClaims
+	UserID string `json:"user_id"`
 }
 
 type Manager struct {
-	secretKey []byte        
-	tokenTTL  time.Duration 
+	secretKey []byte
+	tokenTTL  time.Duration
 }
 
 func NewManager(secretKey string, tokenTTL time.Duration) (*Manager, error) {
@@ -48,7 +48,7 @@ func (m *Manager) Generate(userID string) (string, error) {
 			Issuer:    "calculator-app",
 			Subject:   userID,
 		},
-		UserID: userID, 
+		UserID: userID,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -84,9 +84,9 @@ func (m *Manager) Verify(tokenString string) (userID string, err error) {
 		return "", fmt.Errorf("невалидный токен или claims")
 	}
 
-    if _, parseErr := uuid.Parse(claims.UserID); parseErr != nil {
-        return "", fmt.Errorf("невалидный UserID в claims токена: %w", parseErr)
-    }
+	if _, parseErr := uuid.Parse(claims.UserID); parseErr != nil {
+		return "", fmt.Errorf("невалидный UserID в claims токена: %w", parseErr)
+	}
 
 	return claims.UserID, nil
 }

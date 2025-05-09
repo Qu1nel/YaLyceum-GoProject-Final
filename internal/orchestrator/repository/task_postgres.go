@@ -44,14 +44,12 @@ type TaskRepository interface {
 	SetTaskError(ctx context.Context, taskID uuid.UUID, errorMessage string) error
 }
 
-// pgxTaskRepository теперь использует DBPoolIface
 type pgxTaskRepository struct {
-	db  DBPoolIface // <--- ИЗМЕНЕНО: используем интерфейс
+	db  DBPoolIface
 	log *zap.Logger
 }
 
-// NewPgxTaskRepository теперь принимает DBPoolIface
-func NewPgxTaskRepository(db DBPoolIface, log *zap.Logger) TaskRepository { // <--- ИЗМЕНЕНО
+func NewPgxTaskRepository(db DBPoolIface, log *zap.Logger) TaskRepository {
 	return &pgxTaskRepository{db: db, log: log}
 }
 
@@ -62,7 +60,7 @@ func (r *pgxTaskRepository) CreateTask(ctx context.Context, userID uuid.UUID, ex
         RETURNING id
     `
 	var taskID uuid.UUID
-	err := r.db.QueryRow(ctx, query, userID, expression, StatusPending).Scan(&taskID) // <--- ИЗМЕНЕНО: r.db
+	err := r.db.QueryRow(ctx, query, userID, expression, StatusPending).Scan(&taskID)
 	if err != nil {
 		r.log.Error("Не удалось создать задачу в БД",
 			zap.Stringer("userID", userID),
@@ -85,7 +83,7 @@ func (r *pgxTaskRepository) GetTaskByID(ctx context.Context, taskID uuid.UUID) (
         WHERE id = $1
     `
 	var t Task
-	err := r.db.QueryRow(ctx, query, taskID).Scan( // <--- ИЗМЕНЕНО: r.db
+	err := r.db.QueryRow(ctx, query, taskID).Scan(
 		&t.ID, &t.UserID, &t.Expression, &t.Status,
 		&t.Result, &t.ErrorMessage, &t.CreatedAt, &t.UpdatedAt,
 	)
@@ -106,7 +104,7 @@ func (r *pgxTaskRepository) GetTasksByUserID(ctx context.Context, userID uuid.UU
         WHERE user_id = $1
         ORDER BY created_at DESC
     `
-	rows, err := r.db.Query(ctx, query, userID) // <--- ИЗМЕНЕНО: r.db
+	rows, err := r.db.Query(ctx, query, userID)
 	if err != nil {
 		r.log.Error("Ошибка получения задач по UserID из БД", zap.Stringer("userID", userID), zap.Error(err))
 		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
@@ -136,7 +134,7 @@ func (r *pgxTaskRepository) GetTasksByUserID(ctx context.Context, userID uuid.UU
 
 func (r *pgxTaskRepository) UpdateTaskStatus(ctx context.Context, taskID uuid.UUID, status string) error {
 	query := `UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2`
-	commandTag, err := r.db.Exec(ctx, query, status, taskID) // <--- ИЗМЕНЕНО: r.db
+	commandTag, err := r.db.Exec(ctx, query, status, taskID)
 	if err != nil {
 		r.log.Error("Ошибка обновления статуса задачи", zap.Stringer("taskID", taskID), zap.String("status", status), zap.Error(err))
 		return fmt.Errorf("%w: %v", ErrDatabase, err)
@@ -150,7 +148,7 @@ func (r *pgxTaskRepository) UpdateTaskStatus(ctx context.Context, taskID uuid.UU
 
 func (r *pgxTaskRepository) SetTaskResult(ctx context.Context, taskID uuid.UUID, result float64) error {
 	query := `UPDATE tasks SET status = $1, result = $2, error_message = NULL, updated_at = NOW() WHERE id = $3`
-	commandTag, err := r.db.Exec(ctx, query, StatusCompleted, result, taskID) // <--- ИЗМЕНЕНО: r.db
+	commandTag, err := r.db.Exec(ctx, query, StatusCompleted, result, taskID)
 	if err != nil {
 		r.log.Error("Ошибка установки результата задачи", zap.Stringer("taskID", taskID), zap.Float64("result", result), zap.Error(err))
 		return fmt.Errorf("%w: %v", ErrDatabase, err)
@@ -164,7 +162,7 @@ func (r *pgxTaskRepository) SetTaskResult(ctx context.Context, taskID uuid.UUID,
 
 func (r *pgxTaskRepository) SetTaskError(ctx context.Context, taskID uuid.UUID, errorMessage string) error {
 	query := `UPDATE tasks SET status = $1, error_message = $2, result = NULL, updated_at = NOW() WHERE id = $3`
-	commandTag, err := r.db.Exec(ctx, query, StatusFailed, errorMessage, taskID) // <--- ИЗМЕНЕНО: r.db
+	commandTag, err := r.db.Exec(ctx, query, StatusFailed, errorMessage, taskID)
 	if err != nil {
 		r.log.Error("Ошибка установки ошибки задачи", zap.Stringer("taskID", taskID), zap.String("errorMessage", errorMessage), zap.Error(err))
 		return fmt.Errorf("%w: %v", ErrDatabase, err)

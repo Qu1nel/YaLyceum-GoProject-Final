@@ -3,7 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log" // Используем стандартный логгер для процесса загрузки конфига
+	"log"
 	"os"
 	"strings"
 	"time"
@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-// Config общая конфигурация Воркера.
 type Config struct {
 	AppEnv          string                `mapstructure:"APP_ENV"`
 	GRPCServer      GRPCServerConfig      `mapstructure:",squash"`
@@ -21,17 +20,14 @@ type Config struct {
 	CalculationTime CalculationTimeConfig `mapstructure:",squash"`
 }
 
-// GRPCServerConfig конфигурация gRPC сервера.
 type GRPCServerConfig struct {
 	Port string `mapstructure:"WORKER_GRPC_PORT"`
 }
 
-// LoggerConfig конфигурация логгера.
 type LoggerConfig struct {
 	Level string `mapstructure:"LOG_LEVEL"`
 }
 
-// CalculationTimeConfig конфигурация времени имитации вычислений.
 type CalculationTimeConfig struct {
 	Addition       time.Duration `mapstructure:"TIME_ADDITION_MS"`
 	Subtraction    time.Duration `mapstructure:"TIME_SUBTRACTION_MS"`
@@ -40,14 +36,12 @@ type CalculationTimeConfig struct {
 	Exponentiation time.Duration `mapstructure:"TIME_EXPONENTIATION_MS"`
 }
 
-// Load загружает конфигурацию Воркера из переменных окружения и (опционально) из .env файла.
 func Load() (*Config, error) {
 	v := viper.New()
 
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_")) // Для вложенных структур, если будут
-	v.AutomaticEnv()                                   // Читаем переменные окружения
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
 
-	// Устанавливаем значения по умолчанию
 	v.SetDefault("APP_ENV", "development")
 	v.SetDefault("LOG_LEVEL", "info")
 	v.SetDefault("GRACEFUL_TIMEOUT", "5s")
@@ -58,17 +52,15 @@ func Load() (*Config, error) {
 	v.SetDefault("TIME_DIVISION_MS", "400ms")
 	v.SetDefault("TIME_EXPONENTIATION_MS", "500ms")
 
-	// Пытаемся прочитать .env файл, если это не тестовое окружение
-	// В тестовом окружении переменные обычно устанавливаются явно.
 	if appEnv := os.Getenv("APP_ENV"); appEnv != "test" {
 		v.SetConfigName(".env")
 		v.SetConfigType("env")
-		v.AddConfigPath(".") // Искать .env в текущей директории
+		v.AddConfigPath(".")
 		if err := v.ReadInConfig(); err != nil {
 			if _, ok := err.(viper.ConfigFileNotFoundError); ok {
 				log.Println("Worker Config: .env файл не найден, используются переменные окружения/дефолты.")
 			} else {
-				// Другая ошибка при чтении .env, но не фатальная, т.к. есть дефолты и env vars.
+
 				log.Printf("Worker Config: предупреждение при чтении .env: %v (игнорируется)\n", err)
 			}
 		} else {
@@ -79,7 +71,7 @@ func Load() (*Config, error) {
 	}
 
 	var cfg Config
-	// Используем хук для корректного парсинга time.Duration
+
 	hook := viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
 		mapstructure.StringToTimeDurationHookFunc(),
 	))
@@ -87,12 +79,11 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("worker config: ошибка разбора конфигурации: %w", err)
 	}
 
-	// Базовая валидация (можно расширить)
 	if cfg.GRPCServer.Port == "" {
 		return nil, errors.New("worker config: WORKER_GRPC_PORT не может быть пустым")
 	}
-	if cfg.CalculationTime.Addition <= 0 { // Пример проверки одного из времен
-		// Может быть не ошибкой, если 0ms - валидное значение, но для примера
+	if cfg.CalculationTime.Addition <= 0 {
+
 		log.Printf("Worker Config: TIME_ADDITION_MS имеет нетипичное значение: %s", cfg.CalculationTime.Addition)
 	}
 	if cfg.GracefulTimeout <= 0 {

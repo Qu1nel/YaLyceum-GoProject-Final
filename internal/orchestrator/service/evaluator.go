@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	pb_worker "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/worker" // Убедись, что путь правильный
+	pb_worker "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/worker"
 	"github.com/expr-lang/expr/ast"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -18,7 +18,6 @@ import (
 var (
 	ErrUnsupportedNodeType = errors.New("неподдерживаемый тип узла AST")
 	ErrEvaluationTimeout   = errors.New("превышен таймаут вычисления выражения")
-	// ErrWorkerCalculation = errors.New("ошибка вычисления на воркере") // Можно определить общую ошибку
 )
 
 type Evaluator interface {
@@ -55,17 +54,16 @@ func (e *ExpressionEvaluator) Evaluate(ctx context.Context, node ast.Node) (floa
 			return 0, fmt.Errorf("ошибка вычисления операнда для унарной операции '%s': %w", n.Operator, err)
 		}
 		if n.Operator == "-" {
-			return e.callWorker(ctx, "neg", operandVal, 0) // Используем "neg" для унарного минуса
+			return e.callWorker(ctx, "neg", operandVal, 0)
 		}
 		e.log.Error("Неподдерживаемый унарный оператор", zap.String("operator", n.Operator))
 		return 0, fmt.Errorf("%w: унарный оператор '%s'", ErrUnsupportedNodeType, n.Operator)
 	case *ast.BinaryNode:
 		opSymbol := n.Operator
-		// Обработка оператора возведения в степень "**" из expr как "^" для нашего воркера
+
 		if opSymbol == "**" {
 			opSymbol = "^"
 		}
-
 
 		leftChan := make(chan float64, 1)
 		rightChan := make(chan float64, 1)
@@ -98,14 +96,12 @@ func (e *ExpressionEvaluator) Evaluate(ctx context.Context, node ast.Node) (floa
 		close(rightChan)
 		close(errChan)
 
-		// Важно: читаем из errChan ПОСЛЕ wg.Wait(), чтобы гарантировать, что горутины завершились.
-		for i := 0; i < 2; i++ { // Проверяем обе возможные ошибки
-            if evalErr := <-errChan; evalErr != nil {
-                 e.log.Debug("Ошибка от дочернего узла при вычислении бинарной операции", zap.Error(evalErr))
-                 return 0, evalErr // Возвращаем первую встреченную ошибку от дочерних узлов
-            }
-        }
-
+		for i := 0; i < 2; i++ {
+			if evalErr := <-errChan; evalErr != nil {
+				e.log.Debug("Ошибка от дочернего узла при вычислении бинарной операции", zap.Error(evalErr))
+				return 0, evalErr
+			}
+		}
 
 		leftVal := <-leftChan
 		rightVal := <-rightChan
@@ -122,47 +118,29 @@ func (e *ExpressionEvaluator) Evaluate(ctx context.Context, node ast.Node) (floa
 			zap.Error(workerErr),
 		)
 		return result, workerErr
-     case *ast.CallNode: // Функции, например, sqrt(x) или log(a,b)
-        // Получаем имя функции
-        // Callee - это узел, который вызывается, обычно это IdentifierNode с именем функции
-        funcIdentNode, ok := n.Callee.(*ast.IdentifierNode)
-        if !ok {
-            // Это может произойти, если вызывается не просто имя, а что-то более сложное,
-            // например, (func(){...})() или obj.method(). Пока это не поддерживаем.
-            e.log.Error("Узел функции CallNode имеет Callee не типа IdentifierNode",
-                zap.Any("callee_type", fmt.Sprintf("%T", n.Callee)),
-            )
-            return 0, fmt.Errorf("%w: неподдерживаемый тип вызываемого объекта в CallNode (%T)", ErrUnsupportedNodeType, n.Callee)
-        }
-        funcName := funcIdentNode.Value
+	case *ast.CallNode:
 
-        e.log.Info("Обнаружен вызов функции (пока не реализовано)", // Изменил с Warn на Info
-            zap.String("function_name", funcName),
-            zap.Int("arg_count", len(n.Arguments)),
-        )
+		funcIdentNode, ok := n.Callee.(*ast.IdentifierNode)
+		if !ok {
 
-        // TODO: Реализовать поддержку функций:
-        // 1. Рекурсивно вычислить каждый аргумент в n.Arguments:
-        //    argsResults := make([]float64, len(n.Arguments))
-        //    for i, argNode := range n.Arguments {
-        //        argVal, err := e.Evaluate(ctx, argNode)
-        //        if err != nil {
-        //            return 0, fmt.Errorf("ошибка вычисления аргумента %d для функции '%s': %w", i+1, funcName, err)
-        //        }
-        //        argsResults[i] = argVal
-        //    }
-        // 2. Сформировать OperationSymbol для воркера (например, само имя функции "sqrt", "log")
-        // 3. Вызвать воркер e.callWorker(ctx, funcName, argsResults[0], argsResults[1]... )
-        //    (callWorker нужно будет адаптировать для функций с разным числом аргументов, или иметь разные методы в воркере)
+			e.log.Error("Узел функции CallNode имеет Callee не типа IdentifierNode",
+				zap.Any("callee_type", fmt.Sprintf("%T", n.Callee)),
+			)
+			return 0, fmt.Errorf("%w: неподдерживаемый тип вызываемого объекта в CallNode (%T)", ErrUnsupportedNodeType, n.Callee)
+		}
+		funcName := funcIdentNode.Value
 
-        // Пока возвращаем ошибку, что функции не поддерживаются
-        return 0, fmt.Errorf("%w: вызов функции '%s(%d арг.)' пока не реализован", ErrUnsupportedNodeType, funcName, len(n.Arguments))
+		e.log.Info("Обнаружен вызов функции (пока не реализовано)",
+			zap.String("function_name", funcName),
+			zap.Int("arg_count", len(n.Arguments)),
+		)
 
-	// Другие типы узлов, которые может вернуть expr, но мы их пока не обрабатываем
+		return 0, fmt.Errorf("%w: вызов функции '%s(%d арг.)' пока не реализован", ErrUnsupportedNodeType, funcName, len(n.Arguments))
+
 	case *ast.NilNode, *ast.IdentifierNode, *ast.BoolNode, *ast.StringNode,
-         *ast.MemberNode, *ast.SliceNode, *ast.ArrayNode, *ast.MapNode,
-         *ast.ConditionalNode, *ast.BuiltinNode,
-         *ast.PointerNode, *ast.ConstantNode:
+		*ast.MemberNode, *ast.SliceNode, *ast.ArrayNode, *ast.MapNode,
+		*ast.ConditionalNode, *ast.BuiltinNode,
+		*ast.PointerNode, *ast.ConstantNode:
 		e.log.Error("Неподдерживаемый тип узла AST в Evaluate", zap.Any("type", fmt.Sprintf("%T", n)))
 		return 0, fmt.Errorf("%w: %T", ErrUnsupportedNodeType, n)
 	default:
@@ -180,7 +158,7 @@ func (e *ExpressionEvaluator) callWorker(ctx context.Context, opSymbol string, a
 		zap.Float64("b", b),
 	)
 
-	opCtx, cancel := context.WithTimeout(ctx, 5*time.Second) // Таймаут на конкретную операцию
+	opCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	req := &pb_worker.CalculateOperationRequest{
@@ -197,7 +175,7 @@ func (e *ExpressionEvaluator) callWorker(ctx context.Context, opSymbol string, a
 		zap.Error(grpcErr),
 	)
 
- 	if grpcErr != nil {
+	if grpcErr != nil {
 		e.log.Warn("ExpressionEvaluator.callWorker: Ошибка gRPC вызова Воркера",
 			zap.String("operationID", req.OperationId),
 			zap.String("symbol", opSymbol),
@@ -216,8 +194,6 @@ func (e *ExpressionEvaluator) callWorker(ctx context.Context, opSymbol string, a
 		return 0, fmt.Errorf("ошибка связи с воркером при операции '%s': %w", opSymbol, grpcErr)
 	}
 
-	// Если gRPC вызов успешен (grpcErr == nil), но Воркер мог вернуть логическую ошибку в теле ответа
-	// (Наш Воркер сейчас всегда возвращает gRPC статусную ошибку, так что этот блок может быть избыточен, но для полноты)
 	if res != nil && res.ErrorMessage != "" {
 		e.log.Warn("Воркер вернул ошибку в теле ответа (gRPC вызов успешен)",
 			zap.String("operationID", req.OperationId),
@@ -226,12 +202,11 @@ func (e *ExpressionEvaluator) callWorker(ctx context.Context, opSymbol string, a
 		)
 		return 0, errors.New(res.ErrorMessage)
 	}
-	
-	if res == nil { // Очень маловероятно, если grpcErr == nil
-        e.log.Error("Неожиданный nil ответ от воркера без ошибки gRPC", zap.String("operationID", req.OperationId))
-        return 0, fmt.Errorf("неожиданный пустой ответ от воркера для операции '%s'", opSymbol)
-    }
 
+	if res == nil {
+		e.log.Error("Неожиданный nil ответ от воркера без ошибки gRPC", zap.String("operationID", req.OperationId))
+		return 0, fmt.Errorf("неожиданный пустой ответ от воркера для операции '%s'", opSymbol)
+	}
 
 	e.log.Debug("Операция успешно выполнена Воркером",
 		zap.String("operationID", req.OperationId),

@@ -10,7 +10,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// Использование кастомного типа предотвращает коллизии ключей.
 type contextKey string
 
 const UserIDKey contextKey = "userID"
@@ -19,8 +18,6 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// JWTAuth создает Echo middleware для проверки JWT токена.
-// Оно зависит от JWT менеджера и логгера.
 func JWTAuth(jwtManager *jwtauth.Manager, log *zap.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -57,9 +54,6 @@ func JWTAuth(jwtManager *jwtauth.Manager, log *zap.Logger) echo.MiddlewareFunc {
 	}
 }
 
-// GetUserIDFromContext извлекает UserID из контекста Echo.
-// Возвращает UserID и true, если ID найден и имеет тип string, иначе пустую строку и false.
-// Эту хелпер-функцию будут использовать хендлеры защищенных маршрутов.
 func GetUserIDFromContext(c echo.Context) (string, bool) {
 	userID, ok := c.Request().Context().Value(UserIDKey).(string)
 	return userID, ok

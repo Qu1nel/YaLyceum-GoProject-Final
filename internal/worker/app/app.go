@@ -19,15 +19,13 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Run запускает приложение Worker.
 func Run() {
 	appCtx, cancel := context.WithCancel(context.Background())
 
-	// Начальная инициализация логгера до старта Fx.
 	tempCfg, err := config.Load()
 	var log *zap.Logger
 	if err != nil {
-		log, _ = zap.NewProduction() // Фоллбэк на базовый логгер
+		log, _ = zap.NewProduction()
 		log.Fatal("Worker: не удалось загрузить начальную конфигурацию", zap.Error(err))
 	} else {
 		log, err = logger.New(tempCfg.Logger.Level, tempCfg.AppEnv)
@@ -43,9 +41,9 @@ func Run() {
 	}()
 
 	fxApp := fx.New(
-		fx.Logger(NewFxLogger(log)), // Используем кастомный Fx логгер
+		fx.Logger(NewFxLogger(log)),
 		fx.Provide(
-			func() (*config.Config, error) { // Провайдер конфигурации
+			func() (*config.Config, error) {
 				cfg, loadErr := config.Load()
 				if loadErr != nil {
 					log.Fatal("Worker: не удалось загрузить конфигурацию для DI", zap.Error(loadErr))
@@ -53,11 +51,11 @@ func Run() {
 				}
 				return cfg, nil
 			},
-			func() *zap.Logger { return log }, // Провайдер логгера
-			service.NewCalculatorService,      // Провайдер сервиса вычислений
-			grpc_handler.NewWorkerServer,      // Провайдер gRPC хендлера
-			func(l *zap.Logger) *grpc.Server { // Провайдер gRPC сервера
-				// Здесь можно добавить gRPC Server Options, если понадобятся (например, интерцепторы)
+			func() *zap.Logger { return log },
+			service.NewCalculatorService,
+			grpc_handler.NewWorkerServer,
+			func(l *zap.Logger) *grpc.Server {
+
 				srv := grpc.NewServer()
 				l.Info("Worker: создан инстанс gRPC сервера")
 				return srv
@@ -84,16 +82,14 @@ func Run() {
 					go func() {
 						if serveErr := grpcServer.Serve(listener); serveErr != nil && !errors.Is(serveErr, grpc.ErrServerStopped) {
 							l.Fatal("Worker: gRPC сервер неожиданно завершил работу", zap.Error(serveErr))
-							cancel() // Инициируем остановку всего приложения
+							cancel()
 						}
 					}()
 					return nil
 				},
 				OnStop: func(stopCtx context.Context) error {
 					l.Info("Worker: остановка gRPC сервера...")
-					// GracefulStop ожидает завершения текущих запросов.
-					// Stop принудительно останавливает сервер.
-					// Fx предоставляет контекст с таймаутом для остановки.
+
 					done := make(chan struct{})
 					go func() {
 						grpcServer.GracefulStop()
@@ -103,16 +99,15 @@ func Run() {
 					select {
 					case <-done:
 						l.Info("Worker: gRPC сервер успешно остановлен (GracefulStop).")
-					case <-stopCtx.Done(): // Таймаут от Fx
+					case <-stopCtx.Done():
 						l.Error("Worker: таймаут при корректной остановке gRPC сервера, принудительная остановка.", zap.Error(stopCtx.Err()))
-						grpcServer.Stop() // Принудительная остановка
+						grpcServer.Stop()
 						return stopCtx.Err()
 					}
 					return nil
 				},
 			})
 
-			// Воркер не работает с БД напрямую, поэтому pool здесь nil.
 			go shutdown.Graceful(appCtx, cancel, l, cfg.GracefulTimeout, nil, nil)
 		}),
 	)
@@ -122,7 +117,7 @@ func Run() {
 		os.Exit(1)
 	}
 
-	<-fxApp.Done() // Ожидаем завершения Fx приложения
+	<-fxApp.Done()
 
 	if stopErr := fxApp.Err(); stopErr != nil && !errors.Is(stopErr, context.Canceled) {
 		log.Error("Worker: Fx приложение завершилось с ошибкой при остановке", zap.Error(stopErr))
@@ -131,15 +126,12 @@ func Run() {
 	log.Info("Worker: сервис успешно завершил работу.")
 }
 
-// FxLogger адаптирует Zap логгер для использования с Fx.
 type FxLogger struct{ log *zap.Logger }
 
-// NewFxLogger создает новый FxLogger.
 func NewFxLogger(log *zap.Logger) *FxLogger {
 	return &FxLogger{log: log.WithOptions(zap.AddCallerSkip(1))}
 }
 
-// Printf реализует интерфейс fx.Printer для Fx.
 func (l *FxLogger) Printf(format string, args ...interface{}) {
-	l.log.Info(fmt.Sprintf(format, args...)) // Логируем сообщения от Fx как Info.
+	l.log.Info(fmt.Sprintf(format, args...))
 }

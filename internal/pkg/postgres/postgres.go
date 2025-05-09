@@ -43,7 +43,6 @@ func NewPool(ctx context.Context, dsn string, maxPoolSize int, logger *zap.Logge
 		return nil, fmt.Errorf("не удалось создать пул соединений PostgreSQL: %w", err)
 	}
 
-	// Делаем несколько попыток, т.к. БД может стартовать чуть дольше приложения
 	const maxPingAttempts = 5
 	var pingErr error
 	for attempt := 1; attempt <= maxPingAttempts; attempt++ {
@@ -51,7 +50,7 @@ func NewPool(ctx context.Context, dsn string, maxPoolSize int, logger *zap.Logge
 		pingErr = pool.Ping(pingCtx)
 		cancel()
 		if pingErr == nil {
-			break // Успешный пинг
+			break
 		}
 		logger.Warn("Не удалось проверить соединение с PostgreSQL",
 			zap.Int("попытка", attempt),
@@ -67,7 +66,7 @@ func NewPool(ctx context.Context, dsn string, maxPoolSize int, logger *zap.Logge
 	}
 
 	if pingErr != nil {
-		pool.Close() // Закрываем пул, если пинг так и не прошел
+		pool.Close()
 		return nil, fmt.Errorf("не удалось подключиться к PostgreSQL после %d попыток: %w", maxPingAttempts, pingErr)
 	}
 

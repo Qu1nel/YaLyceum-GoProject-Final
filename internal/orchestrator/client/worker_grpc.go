@@ -13,21 +13,18 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// WorkerClientParams содержит параметры для создания клиента Воркера.
 type WorkerClientParams struct {
 	fx.In
 	Lifecycle fx.Lifecycle
 	Logger    *zap.Logger
-	Config    WorkerClientConfigProvider // Интерфейс для получения конфигурации
+	Config    WorkerClientConfigProvider
 }
 
-// WorkerClientConfigProvider определяет интерфейс для получения конфигурации клиента Воркера.
 type WorkerClientConfigProvider interface {
 	GetWorkerAddress() string
-	GetGRPCClientTimeout() time.Duration // Используем общий таймаут
+	GetGRPCClientTimeout() time.Duration
 }
 
-// NewWorkerServiceClient создает и возвращает новый клиент gRPC для сервиса Воркера.
 func NewWorkerServiceClient(params WorkerClientParams) (pb.WorkerServiceClient, error) {
 	params.Logger.Info("Попытка создания gRPC клиента для Воркера...",
 		zap.String("адрес", params.Config.GetWorkerAddress()),
@@ -50,7 +47,6 @@ func NewWorkerServiceClient(params WorkerClientParams) (pb.WorkerServiceClient, 
 		zap.String("адрес", params.Config.GetWorkerAddress()),
 	)
 
-	// Закрываем соединение при остановке Оркестратора
 	params.Lifecycle.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
 			params.Logger.Info("Закрытие gRPC соединения с Воркером...")

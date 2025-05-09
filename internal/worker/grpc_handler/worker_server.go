@@ -11,14 +11,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// WorkerServer реализует gRPC сервис для Воркера.
 type WorkerServer struct {
-	pb.UnimplementedWorkerServiceServer // Для обратной совместимости
-	log                                 *zap.Logger
-	calcService                         service.Calculator
+	pb.UnimplementedWorkerServiceServer
+	log         *zap.Logger
+	calcService service.Calculator
 }
 
-// NewWorkerServer создает новый экземпляр WorkerServer.
 func NewWorkerServer(log *zap.Logger, calcService service.Calculator) *WorkerServer {
 	return &WorkerServer{
 		log:         log,
@@ -26,15 +24,13 @@ func NewWorkerServer(log *zap.Logger, calcService service.Calculator) *WorkerSer
 	}
 }
 
-// CalculateOperation обрабатывает gRPC запрос на вычисление операции.
 func (s *WorkerServer) CalculateOperation(ctx context.Context, req *pb.CalculateOperationRequest) (*pb.CalculateOperationResponse, error) {
-	// Логируем основные параметры запроса для отладки и мониторинга.
+
 	s.log.Debug("WorkerServer: получен запрос CalculateOperation",
 		zap.String("operationID", req.GetOperationId()),
 		zap.String("symbol", req.GetOperationSymbol()),
 		zap.Float64("operandA", req.GetOperandA()),
 		zap.Float64("operandB", req.GetOperandB()),
-		// TODO: Логировать req.GetArguments() когда они будут использоваться
 	)
 
 	if req.GetOperationId() == "" || req.GetOperationSymbol() == "" {
@@ -42,9 +38,7 @@ func (s *WorkerServer) CalculateOperation(ctx context.Context, req *pb.Calculate
 		return nil, status.Error(codes.InvalidArgument, "operation_id и operation_symbol обязательны")
 	}
 
-	// Передаем управление сервисному слою для выполнения бизнес-логики.
-	result, serviceErr := s.calcService.Calculate(ctx, req.GetOperationSymbol(), req.GetOperandA(), req.GetOperandB() /*, req.GetArguments()... */)
-	// TODO: передать req.GetArguments() когда они будут использоваться в CalculatorService
+	result, serviceErr := s.calcService.Calculate(ctx, req.GetOperationSymbol(), req.GetOperandA(), req.GetOperandB())
 
 	response := &pb.CalculateOperationResponse{OperationId: req.GetOperationId()}
 
@@ -53,18 +47,17 @@ func (s *WorkerServer) CalculateOperation(ctx context.Context, req *pb.Calculate
 			zap.String("operationID", req.GetOperationId()),
 			zap.Error(serviceErr),
 		)
-		response.ErrorMessage = serviceErr.Error() // Записываем сообщение об ошибке для клиента
+		response.ErrorMessage = serviceErr.Error()
 
-		// Маппим ошибки сервиса на gRPC статусы
 		if errors.Is(serviceErr, service.ErrDivisionByZero) ||
-			errors.Is(serviceErr, service.ErrUnknownOperator) /* || errors.Is(serviceErr, service.ErrInvalidArgumentsForFunc) */ {
-			// TODO: добавить обработку других специфичных ошибок, например, для функций
+			errors.Is(serviceErr, service.ErrUnknownOperator) {
+
 			return response, status.Error(codes.InvalidArgument, response.ErrorMessage)
 		}
 		if errors.Is(serviceErr, context.Canceled) || errors.Is(serviceErr, context.DeadlineExceeded) {
 			return response, status.Error(codes.DeadlineExceeded, "операция отменена или превышен таймаут")
 		}
-		// Для всех остальных (неожиданных) ошибок сервиса возвращаем Internal.
+
 		return response, status.Error(codes.Internal, "внутренняя ошибка сервера при вычислении")
 	}
 

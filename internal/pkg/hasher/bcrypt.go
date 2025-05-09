@@ -12,7 +12,7 @@ type PasswordHasher interface {
 }
 
 type BcryptHasher struct {
-	cost int // Сложность хеширования bcrypt.
+	cost int
 }
 
 func NewBcryptHasher(cost int) *BcryptHasher {
@@ -22,9 +22,8 @@ func NewBcryptHasher(cost int) *BcryptHasher {
 	return &BcryptHasher{cost: cost}
 }
 
-// Hash генерирует хеш bcrypt для заданного пароля.
 func (h *BcryptHasher) Hash(password string) (string, error) {
-	// Проверка длины пароля перед хешированием (bcrypt имеет ограничение в 72 байта)
+
 	if len(password) == 0 {
 		return "", fmt.Errorf("пароль не может быть пустым")
 	}
@@ -40,8 +39,6 @@ func (h *BcryptHasher) Hash(password string) (string, error) {
 	return string(hashedBytes), nil
 }
 
-// Compare сравнивает хеш bcrypt с паролем.
-// Возвращает nil при совпадении, иначе ошибку (включая bcrypt.ErrMismatchedHashAndPassword).
 func (h *BcryptHasher) Compare(hashedPassword, password string) error {
 	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
 	if err != nil {

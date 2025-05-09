@@ -14,17 +14,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// Graceful выполняет корректное завершение работы приложения.
-// Он слушает сигналы SIGINT и SIGTERM, отменяет главный контекст приложения
-// и дает время (timeout) на завершение работы запущенных компонентов (HTTP, gRPC, БД).
 func Graceful(
-	mainCtx context.Context, 
-	mainCancel context.CancelFunc, 
+	mainCtx context.Context,
+	mainCancel context.CancelFunc,
 	log *zap.Logger,
-	timeout time.Duration, 
-	servers map[string]func(context.Context) error, 
-	dbPool *pgxpool.Pool, 
-	// grpcServer *grpc.Server, // Добавить позже
+	timeout time.Duration,
+	servers map[string]func(context.Context) error,
+	dbPool *pgxpool.Pool,
+
 ) {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -33,7 +30,7 @@ func Graceful(
 		select {
 		case sig := <-quit:
 			log.Info("Получен сигнал ОС для завершения работы", zap.String("сигнал", sig.String()))
-			mainCancel() 
+			mainCancel()
 		case <-mainCtx.Done():
 			log.Debug("Главный контекст приложения отменен, начинаем завершение...")
 		}
@@ -44,13 +41,10 @@ func Graceful(
 	log.Info("Начинаем корректное завершение работы...", zap.Duration("таймаут", timeout))
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), timeout)
-	defer shutdownCancel() 
+	defer shutdownCancel()
 
 	var wg sync.WaitGroup
 
-	// Останавливаем компоненты в обратном порядке их запуска (и по логике зависимостей)
-
-	// 1. Остановка HTTP сервера
 	if stopHTTPServer, ok := servers["http"]; ok {
 		wg.Add(1)
 		go func() {
@@ -64,19 +58,6 @@ func Graceful(
 		}()
 	}
 
-	// 2. Остановка gRPC сервера (когда появится)
-	// if grpcServer != nil {
-	//     wg.Add(1)
-	//     go func() {
-	//         defer wg.Done()
-	//         log.Debug("Остановка gRPC сервера...")
-	//         grpcServer.GracefulStop() // GracefulStop сам обрабатывает контекст
-	//         log.Info("gRPC сервер успешно остановлен")
-	//     }()
-	// }
-
-	// 3. Закрытие пула соединений к БД (после остановки серверов)
-	// Ожидаем завершения остановки серверов перед закрытием пула
 	allServersStopped := make(chan struct{})
 	go func() {
 		wg.Wait()

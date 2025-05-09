@@ -8,21 +8,20 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
-	// "github.com/mitchellh/mapstructure" // Не нужен, если нет time.Duration из строк
 )
 
-type GRPCClientConfig struct { // Конфиг для клиента Воркера
+type GRPCClientConfig struct {
 	WorkerAddress string        `mapstructure:"WORKER_GRPC_ADDRESS"`
 	Timeout       time.Duration `mapstructure:"GRPC_CLIENT_TIMEOUT"`
 }
 
 type Config struct {
 	AppEnv          string           `mapstructure:"APP_ENV"`
-	GRPCServer      GRPCServerConfig `mapstructure:",squash"` // Конфиг своего gRPC сервера
+	GRPCServer      GRPCServerConfig `mapstructure:",squash"`
 	Database        DatabaseConfig   `mapstructure:",squash"`
 	Logger          LoggerConfig     `mapstructure:",squash"`
 	GracefulTimeout time.Duration    `mapstructure:"GRACEFUL_TIMEOUT"`
-	WorkerClient    GRPCClientConfig `mapstructure:",squash"` // Конфиг клиента к Воркеру
+	WorkerClient    GRPCClientConfig `mapstructure:",squash"`
 }
 
 type GRPCServerConfig struct {
@@ -49,7 +48,7 @@ func Load() (*Config, error) {
 	v.SetDefault("GRACEFUL_TIMEOUT", "5s")
 	v.SetDefault("POSTGRES_DSN", "postgres://user_default:pass_default@postgres_host_default:5432/db_default?sslmode=disable")
 	v.SetDefault("DB_POOL_MAX_CONNS", 10)
-	v.SetDefault("GRPC_CLIENT_TIMEOUT", "5s") // Общий для клиента Воркера
+	v.SetDefault("GRPC_CLIENT_TIMEOUT", "5s")
 
 	v.SetDefault("ORCHESTRATOR_GRPC_PORT", "50051")
 	v.SetDefault("WORKER_GRPC_ADDRESS", "worker_default:50052")
@@ -76,22 +75,21 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("ошибка разбора конфигурации Оркестратора: %w", err)
 	}
 
-	// Валидация
 	if cfg.GRPCServer.Port == "" || (os.Getenv("APP_ENV") == "test" && cfg.GRPCServer.Port == v.GetString("ORCHESTRATOR_GRPC_PORT") && os.Getenv("ORCHESTRATOR_GRPC_PORT") != cfg.GRPCServer.Port) {
 		return nil, fmt.Errorf("ORCHESTRATOR_GRPC_PORT: ожидалось '%s' из env, получено '%s'", os.Getenv("ORCHESTRATOR_GRPC_PORT"), cfg.GRPCServer.Port)
 	}
-	if cfg.Database.DSN == "" || (os.Getenv("APP_ENV") == "test" && cfg.Database.DSN == v.GetString("POSTGRES_DSN") && os.Getenv("POSTGRES_DSN") != cfg.Database.DSN )  {
+	if cfg.Database.DSN == "" || (os.Getenv("APP_ENV") == "test" && cfg.Database.DSN == v.GetString("POSTGRES_DSN") && os.Getenv("POSTGRES_DSN") != cfg.Database.DSN) {
 		return nil, fmt.Errorf("POSTGRES_DSN для Оркестратора не установлен или равен дефолтному в тесте (текущий: '%s', ожидался из env: '%s')", cfg.Database.DSN, os.Getenv("POSTGRES_DSN"))
 	}
 	if cfg.WorkerClient.WorkerAddress == "" || (os.Getenv("APP_ENV") == "test" && cfg.WorkerClient.WorkerAddress == v.GetString("WORKER_GRPC_ADDRESS") && os.Getenv("WORKER_GRPC_ADDRESS") != cfg.WorkerClient.WorkerAddress) {
 		return nil, fmt.Errorf("WORKER_GRPC_ADDRESS для Оркестратора не установлен или равен дефолтному в тесте (текущий: '%s', ожидался из env: '%s')", cfg.WorkerClient.WorkerAddress, os.Getenv("WORKER_GRPC_ADDRESS"))
 	}
-    if cfg.WorkerClient.Timeout <= 0 {
-        return nil, fmt.Errorf("GRPC_CLIENT_TIMEOUT для клиента Воркера должен быть положительным")
-    }
-    if cfg.GracefulTimeout <= 0 {
-        return nil, fmt.Errorf("GRACEFUL_TIMEOUT должен быть положительным")
-    }
+	if cfg.WorkerClient.Timeout <= 0 {
+		return nil, fmt.Errorf("GRPC_CLIENT_TIMEOUT для клиента Воркера должен быть положительным")
+	}
+	if cfg.GracefulTimeout <= 0 {
+		return nil, fmt.Errorf("GRACEFUL_TIMEOUT должен быть положительным")
+	}
 
 	return &cfg, nil
 }

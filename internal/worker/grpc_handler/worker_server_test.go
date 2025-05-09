@@ -1,14 +1,14 @@
-package grpc_handler_test // Используем _test суффикс для тестового пакета
+package grpc_handler_test
 
 import (
 	"context"
-	"errors" // Для errors.Is в тестах
+	"errors"
 	"fmt"
 	"testing"
 
-	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/worker/grpc_handler" // Пакет под тестом
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/worker/grpc_handler"
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/worker/service"
-	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/worker/service/mocks" // Моки
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/worker/service/mocks"
 	pb_worker "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/worker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -18,10 +18,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// newTestServer создает сервер с моком для тестов.
 func newTestServer(t *testing.T) (*grpc_handler.WorkerServer, *mocks.CalculatorServiceMock) {
 	t.Helper()
-	logger := zap.NewNop() // Не выводим логи в тестах
+	logger := zap.NewNop()
 	mockCalcService := mocks.NewCalculatorServiceMock(t)
 	grpcServer := grpc_handler.NewWorkerServer(logger, mockCalcService)
 	return grpcServer, mockCalcService
@@ -34,7 +33,6 @@ func TestWorkerServer_CalculateOperation_Success(t *testing.T) {
 	}
 	expectedResult := 15.0
 
-	// Ожидаем вызов Calculate с любым контекстом и заданными аргументами.
 	mockCalcService.On("Calculate", mock.Anything, req.OperationSymbol, req.OperandA, req.OperandB).Return(expectedResult, nil).Once()
 
 	res, err := grpcServer.CalculateOperation(context.Background(), req)
@@ -44,7 +42,7 @@ func TestWorkerServer_CalculateOperation_Success(t *testing.T) {
 	assert.Equal(t, req.OperationId, res.OperationId, "ID операции в ответе")
 	assert.Equal(t, expectedResult, res.Result, "Результат вычисления")
 	assert.Empty(t, res.ErrorMessage, "Сообщение об ошибке должно быть пустым")
-	mockCalcService.AssertExpectations(t) // Проверяем, что мок был вызван как ожидалось
+	mockCalcService.AssertExpectations(t)
 }
 
 func TestWorkerServer_CalculateOperation_ServiceError(t *testing.T) {
@@ -109,7 +107,7 @@ func TestWorkerServer_CalculateOperation_InvalidRequest(t *testing.T) {
 			require.True(t, ok)
 			assert.Equal(t, codes.InvalidArgument, st.Code())
 			assert.Contains(t, st.Message(), tc.wantErr)
-			// Убедимся, что сервис вычислений не вызывался
+
 			mockCalcService.AssertNotCalled(t, "Calculate", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 		})
 	}

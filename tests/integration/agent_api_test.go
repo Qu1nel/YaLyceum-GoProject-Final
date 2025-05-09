@@ -12,43 +12,37 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/repository" // Используется для констант статусов
+	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/orchestrator/repository"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// RegisterResponse структура ответа для регистрации.
 type RegisterResponse struct {
 	Message string `json:"message"`
 }
 
-// LoginResponse структура ответа для входа.
 type LoginResponse struct {
 	Token string `json:"token"`
 }
 
-// CalculateResponse структура ответа для запроса на вычисление.
 type CalculateResponse struct {
 	TaskID string `json:"task_id"`
 }
 
-// ErrorResponse структура для ошибок API.
 type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// TaskDetailsResponse структура для деталей задачи.
 type TaskDetailsResponse struct {
 	ID         string    `json:"id"`
 	Expression string    `json:"expression"`
 	Status     string    `json:"status"`
-	Result     *float64  `json:"result,omitempty"` // Указатель, чтобы JSON мог быть nil
+	Result     *float64  `json:"result,omitempty"`
 	ErrorMsg   *string   `json:"error_message,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-// TaskListItemResponse структура для элемента в списке задач.
 type TaskListItemResponse struct {
 	ID         string    `json:"id"`
 	Expression string    `json:"expression"`
@@ -56,13 +50,11 @@ type TaskListItemResponse struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-// TestIntegration_RegisterLoginSubmitTask проверяет полный цикл: регистрация, логин, отправка задачи, проверка результата.
 func TestIntegration_RegisterLoginSubmitTask(t *testing.T) {
 	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
-	client := &http.Client{Timeout: 15 * time.Second} // Увеличен таймаут для клиента
+	client := &http.Client{Timeout: 15 * time.Second}
 	ctx := context.Background()
 
-	// Шаг 1: Регистрация
 	registerLogin := fmt.Sprintf("user_%d", time.Now().UnixNano())
 	registerPassword := "password123"
 	registerPayload := map[string]string{"login": registerLogin, "password": registerPassword}
@@ -81,7 +73,6 @@ func TestIntegration_RegisterLoginSubmitTask(t *testing.T) {
 	assert.Equal(t, "Пользователь успешно зарегистрирован", regData.Message)
 	log.Printf("Интеграционный тест: Пользователь %s зарегистрирован.\n", registerLogin)
 
-	// Шаг 2: Логин
 	loginPayload := map[string]string{"login": registerLogin, "password": registerPassword}
 	loginBody, _ := json.Marshal(loginPayload)
 	loginReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, testAgentBaseURL+"/login", bytes.NewBuffer(loginBody))
@@ -98,8 +89,7 @@ func TestIntegration_RegisterLoginSubmitTask(t *testing.T) {
 	jwtToken := loginData.Token
 	log.Printf("Интеграционный тест: Пользователь %s вошел, токен получен.\n", registerLogin)
 
-	// Шаг 3: Отправка выражения на вычисление
-	expression := " (2 + 3) * 4 - 10 / 2 " // Ожидаемый результат: 15
+	expression := " (2 + 3) * 4 - 10 / 2 "
 	calcPayload := map[string]string{"expression": expression}
 	calcBody, _ := json.Marshal(calcPayload)
 	calcReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, testAgentBaseURL+"/calculate", bytes.NewBuffer(calcBody))
@@ -109,11 +99,10 @@ func TestIntegration_RegisterLoginSubmitTask(t *testing.T) {
 	calcResp, err := client.Do(calcReq)
 	require.NoError(t, err, "Ошибка при запросе /calculate")
 
-	// Читаем тело ответа для возможного логирования и последующего декодирования
 	respBodyBytes, readErr := io.ReadAll(calcResp.Body)
 	require.NoError(t, readErr, "Не удалось прочитать тело ответа /calculate")
-	calcResp.Body.Close()                                        // Закрываем оригинальное тело
-	calcResp.Body = io.NopCloser(bytes.NewBuffer(respBodyBytes)) // Восстанавливаем для декодера
+	calcResp.Body.Close()
+	calcResp.Body = io.NopCloser(bytes.NewBuffer(respBodyBytes))
 
 	if calcResp.StatusCode != http.StatusAccepted {
 		var errResp ErrorResponse
@@ -129,18 +118,17 @@ func TestIntegration_RegisterLoginSubmitTask(t *testing.T) {
 	taskID := calcData.TaskID
 	log.Printf("Интеграционный тест: Задача %s для '%s' отправлена.\n", taskID, expression)
 
-	// Шаг 4: Проверка статуса задачи
 	taskDetailsURL := fmt.Sprintf("%s/tasks/%s", testAgentBaseURL, taskID)
 	detailsReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, taskDetailsURL, nil)
 	detailsReq.Header.Set("Authorization", "Bearer "+jwtToken)
 
 	var taskDetails TaskDetailsResponse
-	const maxAttempts = 7 // Увеличено число попыток
+	const maxAttempts = 7
 	const initialDelay = 200 * time.Millisecond
 	currentDelay := initialDelay
 
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		detailsResp, detailsErr := client.Do(detailsReq.Clone(ctx)) // Клонируем запрос
+		detailsResp, detailsErr := client.Do(detailsReq.Clone(ctx))
 		require.NoError(t, detailsErr, "Детали задачи (попытка %d): ошибка запроса", attempt)
 
 		bodyBytes, _ := io.ReadAll(detailsResp.Body)
@@ -149,20 +137,20 @@ func TestIntegration_RegisterLoginSubmitTask(t *testing.T) {
 
 		if detailsResp.StatusCode != http.StatusOK {
 			var errResp ErrorResponse
-			json.Unmarshal(bodyBytes, &errResp) // Игнорируем ошибку анмаршалинга, если тело не JSON
+			json.Unmarshal(bodyBytes, &errResp)
 			log.Printf("Детали задачи (попытка %d): статус %d, ошибка: %s, тело: %s", attempt, detailsResp.StatusCode, errResp.Error, string(bodyBytes))
 			if attempt == maxAttempts {
 				t.Fatalf("Не удалось получить детали задачи %s после %d попыток, последний статус %d", taskID, maxAttempts, detailsResp.StatusCode)
 			}
 			time.Sleep(currentDelay)
-			currentDelay *= 2 // Экспоненциальная задержка
+			currentDelay *= 2
 			continue
 		}
 
 		require.NoError(t, json.NewDecoder(detailsResp.Body).Decode(&taskDetails), "Детали задачи (попытка %d): ошибка декодирования", attempt)
 
 		if taskDetails.Status == repository.StatusCompleted || taskDetails.Status == repository.StatusFailed {
-			break // Задача достигла финального статуса
+			break
 		}
 
 		log.Printf("Детали задачи (попытка %d): статус '%s', ждем...", attempt, taskDetails.Status)
@@ -182,18 +170,15 @@ func TestIntegration_RegisterLoginSubmitTask(t *testing.T) {
 	assert.Nil(t, taskDetails.ErrorMsg, "Сообщение об ошибке должно быть nil")
 }
 
-// TestIntegration_TasksAPI_ListAndGetOwnTasks проверяет получение списка задач и доступ к конкретной задаче.
 func TestIntegration_TasksAPI_ListAndGetOwnTasks(t *testing.T) {
 	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
 	client := &http.Client{Timeout: 15 * time.Second}
 	ctx := context.Background()
 
-	// Пользователь A
 	userALogin := fmt.Sprintf("userA_list_%d", time.Now().UnixNano()%1000000)
 	tokenA := registerAndLoginUser(t, client, ctx, userALogin, "passwordA")
 	log.Printf("ListOwnTasks: Пользователь A (%s) вошел.\n", userALogin)
 
-	// Создание задач Пользователем A
 	expressions := []string{"10+20", "100/10", "2^3"}
 	expectedResults := []float64{30.0, 10.0, 8.0}
 	taskIDsA := make([]string, len(expressions))
@@ -218,9 +203,8 @@ func TestIntegration_TasksAPI_ListAndGetOwnTasks(t *testing.T) {
 		taskIDsA[i] = calcData.TaskID
 	}
 	log.Printf("ListOwnTasks: Пользователем A создано %d задач.\n", len(taskIDsA))
-	time.Sleep(3 * time.Second) // Ожидание вычисления
+	time.Sleep(3 * time.Second)
 
-	// Получение списка задач Пользователя A
 	tasksReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, testAgentBaseURL+"/tasks", nil)
 	tasksReq.Header.Set("Authorization", "Bearer "+tokenA)
 	tasksResp, err := client.Do(tasksReq)
@@ -242,7 +226,6 @@ func TestIntegration_TasksAPI_ListAndGetOwnTasks(t *testing.T) {
 		assert.True(t, returnedTaskIDs[originalID], "Задача %s не найдена в списке", originalID)
 	}
 
-	// Получение деталей одной из задач Пользователя A
 	if len(taskIDsA) > 0 {
 		detailsURL := fmt.Sprintf("%s/tasks/%s", testAgentBaseURL, taskIDsA[0])
 		detailsReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, detailsURL, nil)
@@ -262,7 +245,6 @@ func TestIntegration_TasksAPI_ListAndGetOwnTasks(t *testing.T) {
 	}
 }
 
-// TestIntegration_SubmitExpressionThatFailsAtEvaluation проверяет обработку задачи, которая падает при вычислении.
 func TestIntegration_SubmitExpressionThatFailsAtEvaluation(t *testing.T) {
 	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -271,7 +253,7 @@ func TestIntegration_SubmitExpressionThatFailsAtEvaluation(t *testing.T) {
 	userLogin := fmt.Sprintf("evalfail_usr_%d", time.Now().UnixNano()%100000)
 	jwtToken := registerAndLoginUser(t, client, ctx, userLogin, "password123")
 
-	expression := "1 / 0" // Деление на ноль
+	expression := "1 / 0"
 	calcPayload := map[string]string{"expression": expression}
 	calcBody, _ := json.Marshal(calcPayload)
 	calcReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, testAgentBaseURL+"/calculate", bytes.NewBuffer(calcBody))
@@ -288,7 +270,7 @@ func TestIntegration_SubmitExpressionThatFailsAtEvaluation(t *testing.T) {
 	taskID := calcData.TaskID
 	log.Printf("Ошибка вычисления: Задача %s для '%s' отправлена.\n", taskID, expression)
 
-	time.Sleep(1500 * time.Millisecond) // Ожидание
+	time.Sleep(1500 * time.Millisecond)
 
 	taskDetailsURL := fmt.Sprintf("%s/tasks/%s", testAgentBaseURL, taskID)
 	detailsReq, _ := http.NewRequestWithContext(ctx, http.MethodGet, taskDetailsURL, nil)
@@ -326,17 +308,14 @@ func TestIntegration_SubmitExpressionThatFailsAtEvaluation(t *testing.T) {
 	assert.Nil(t, taskDetails.Result, "Результат должен быть nil для задачи 'failed'")
 }
 
-// TestIntegration_TasksAPI_AccessControls проверяет контроль доступа к задачам.
 func TestIntegration_TasksAPI_AccessControls(t *testing.T) {
 	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
 	client := &http.Client{Timeout: 10 * time.Second}
 	ctx := context.Background()
 
-	// Пользователь A
 	userALogin := fmt.Sprintf("userA_access_%d", time.Now().UnixNano()%1000000)
 	tokenA := registerAndLoginUser(t, client, ctx, userALogin, "passwordA")
 
-	// Пользователь A создает задачу
 	calcPayloadA := map[string]string{"expression": "1+1"}
 	calcBodyA, _ := json.Marshal(calcPayloadA)
 	calcReqA, _ := http.NewRequestWithContext(ctx, http.MethodPost, testAgentBaseURL+"/calculate", bytes.NewBuffer(calcBodyA))
@@ -349,13 +328,11 @@ func TestIntegration_TasksAPI_AccessControls(t *testing.T) {
 	require.NoError(t, json.NewDecoder(calcRespA.Body).Decode(&calcDataA))
 	calcRespA.Body.Close()
 	taskAID := calcDataA.TaskID
-	time.Sleep(1 * time.Second) // Ожидание
+	time.Sleep(1 * time.Second)
 
-	// Пользователь B
 	userBLogin := fmt.Sprintf("userB_access_%d", time.Now().UnixNano()%1000000)
 	tokenB := registerAndLoginUser(t, client, ctx, userBLogin, "passwordB")
 
-	// Пользователь B пытается получить детали задачи Пользователя A
 	detailsURL_A_by_B := fmt.Sprintf("%s/tasks/%s", testAgentBaseURL, taskAID)
 	detailsReq_A_by_B, _ := http.NewRequestWithContext(ctx, http.MethodGet, detailsURL_A_by_B, nil)
 	detailsReq_A_by_B.Header.Set("Authorization", "Bearer "+tokenB)
@@ -369,7 +346,6 @@ func TestIntegration_TasksAPI_AccessControls(t *testing.T) {
 		assert.Contains(t, errorDataB.Error, "не найдена", "Сообщение об ошибке 'не найдена'")
 	}
 
-	// Пользователь B запрашивает свой список задач (пустой)
 	tasksReqB, _ := http.NewRequestWithContext(ctx, http.MethodGet, testAgentBaseURL+"/tasks", nil)
 	tasksReqB.Header.Set("Authorization", "Bearer "+tokenB)
 	tasksRespB, err := client.Do(tasksReqB)
@@ -380,8 +356,7 @@ func TestIntegration_TasksAPI_AccessControls(t *testing.T) {
 	require.NoError(t, json.NewDecoder(tasksRespB.Body).Decode(&userBTasks))
 	assert.Empty(t, userBTasks, "Список задач пользователя B должен быть пустым")
 
-	// Пользователь A запрашивает детали своей задачи (успех)
-	detailsReq_A_by_A, _ := http.NewRequestWithContext(ctx, http.MethodGet, detailsURL_A_by_B, nil) // Используем тот же URL
+	detailsReq_A_by_A, _ := http.NewRequestWithContext(ctx, http.MethodGet, detailsURL_A_by_B, nil)
 	detailsReq_A_by_A.Header.Set("Authorization", "Bearer "+tokenA)
 	detailsResp_A_by_A, err := client.Do(detailsReq_A_by_A)
 	require.NoError(t, err)
@@ -389,11 +364,9 @@ func TestIntegration_TasksAPI_AccessControls(t *testing.T) {
 	assert.Equal(t, http.StatusOK, detailsResp_A_by_A.StatusCode, "Пользователь A должен иметь доступ к своей задаче")
 }
 
-// registerAndLoginUser вспомогательная функция для регистрации и логина.
 func registerAndLoginUser(t *testing.T, client *http.Client, ctx context.Context, login, password string) string {
 	t.Helper()
 
-	// Регистрация
 	regPayload := map[string]string{"login": login, "password": password}
 	regBody, _ := json.Marshal(regPayload)
 	regReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, testAgentBaseURL+"/register", bytes.NewBuffer(regBody))
@@ -414,7 +387,6 @@ func registerAndLoginUser(t *testing.T, client *http.Client, ctx context.Context
 		}
 	}
 
-	// Логин
 	loginPayload := map[string]string{"login": login, "password": password}
 	loginBody, _ := json.Marshal(loginPayload)
 	loginReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, testAgentBaseURL+"/login", bytes.NewBuffer(loginBody))
@@ -430,7 +402,6 @@ func registerAndLoginUser(t *testing.T, client *http.Client, ctx context.Context
 	return loginData.Token
 }
 
-// TestIntegration_AuthErrors проверяет ошибки аутентификации.
 func TestIntegration_AuthErrors(t *testing.T) {
 	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -459,7 +430,6 @@ func TestIntegration_AuthErrors(t *testing.T) {
 	})
 }
 
-// TestIntegration_RegisterExistingLogin проверяет регистрацию с уже существующим логином.
 func TestIntegration_RegisterExistingLogin(t *testing.T) {
 	require.NotEmpty(t, testAgentBaseURL, "Базовый URL Агента не должен быть пустым")
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -469,7 +439,6 @@ func TestIntegration_RegisterExistingLogin(t *testing.T) {
 	payload := map[string]string{"login": login, "password": "password123"}
 	body, _ := json.Marshal(payload)
 
-	// Первая регистрация
 	req1, _ := http.NewRequestWithContext(ctx, http.MethodPost, testAgentBaseURL+"/register", bytes.NewBuffer(body))
 	req1.Header.Set("Content-Type", "application/json")
 	resp1, err := client.Do(req1)
@@ -477,7 +446,6 @@ func TestIntegration_RegisterExistingLogin(t *testing.T) {
 	defer resp1.Body.Close()
 	require.Equal(t, http.StatusOK, resp1.StatusCode, "Первая регистрация должна быть успешной")
 
-	// Повторная регистрация
 	req2, _ := http.NewRequestWithContext(ctx, http.MethodPost, testAgentBaseURL+"/register", bytes.NewBuffer(body))
 	req2.Header.Set("Content-Type", "application/json")
 	resp2, err := client.Do(req2)

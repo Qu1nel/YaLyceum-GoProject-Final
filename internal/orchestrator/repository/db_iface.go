@@ -7,8 +7,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// DBPoolIface определяет интерфейс для пула соединений,
-// который использует TaskRepository. Это упрощает мокирование.
 type DBPoolIface interface {
 	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
 	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)

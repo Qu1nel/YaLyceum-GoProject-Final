@@ -20,7 +20,6 @@ var (
 	ErrInvalidCredentials    = errors.New("неверный логин или пароль")
 	ErrRegistrationFailed    = errors.New("ошибка регистрации")
 	ErrLoginFailed           = errors.New("ошибка входа")
-	// ErrLoginAlreadyExists используется из пакета repository
 )
 
 var loginRegex = regexp.MustCompile(`^[a-zA-Z0-9_]{3,30}$`)
@@ -47,7 +46,7 @@ func NewAuthService(
 		userRepo:   userRepo,
 		hasher:     hasher,
 		log:        log,
-		jwtManager: jwtManager, 
+		jwtManager: jwtManager,
 	}
 }
 
@@ -96,10 +95,10 @@ func (s *authService) Login(ctx context.Context, login, password string) (string
 			return "", "", ErrInvalidCredentials
 		}
 		s.log.Error("Ошибка при сравнении хеша пароля", zap.Error(err), zap.String("login", login))
-		return "", "", fmt.Errorf("%w: ошибка сравнения хеша: %v", ErrLoginFailed, err) 
+		return "", "", fmt.Errorf("%w: ошибка сравнения хеша: %v", ErrLoginFailed, err)
 	}
 
-	token, err := s.jwtManager.Generate(user.ID.String()) 
+	token, err := s.jwtManager.Generate(user.ID.String())
 	if err != nil {
 		s.log.Error("Не удалось сгенерировать JWT токен", zap.Error(err), zap.String("userID", user.ID.String()))
 		return "", "", fmt.Errorf("%w: ошибка генерации токена", ErrLoginFailed)
