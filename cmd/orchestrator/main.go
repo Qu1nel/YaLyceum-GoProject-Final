@@ -8,12 +8,14 @@ import (
 )
 
 func main() {
+	// Базовый обработчик паник.
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "Неперехваченная паника в Оркестраторе: %v\n", r)
+			fmt.Fprintf(os.Stderr, "Критическая ошибка (паника) в Orchestrator main: %v\n", r)
 			os.Exit(1)
 		}
 	}()
 
+	// Запуск основного приложения Orchestrator.
 	app.Run()
 }
