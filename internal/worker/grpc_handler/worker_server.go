@@ -2,21 +2,23 @@ package grpc_handler
 
 import (
 	"context"
-	"errors" // Для errors.Is
+	"errors"
 
 	"github.com/Qu1nel/YaLyceum-GoProject-Final/internal/worker/service"
-	pb "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/worker" // Убедись, что путь правильный
+	pb "github.com/Qu1nel/YaLyceum-GoProject-Final/proto/gen/worker"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
+// WorkerServer реализует gRPC сервис для Воркера.
 type WorkerServer struct {
-	pb.UnimplementedWorkerServiceServer
-	log         *zap.Logger
-	calcService service.Calculator
+	pb.UnimplementedWorkerServiceServer // Для обратной совместимости
+	log                                 *zap.Logger
+	calcService                         service.Calculator
 }
 
+// NewWorkerServer создает новый экземпляр WorkerServer.
 func NewWorkerServer(log *zap.Logger, calcService service.Calculator) *WorkerServer {
 	return &WorkerServer{
 		log:         log,
@@ -24,60 +26,52 @@ func NewWorkerServer(log *zap.Logger, calcService service.Calculator) *WorkerSer
 	}
 }
 
+// CalculateOperation обрабатывает gRPC запрос на вычисление операции.
 func (s *WorkerServer) CalculateOperation(ctx context.Context, req *pb.CalculateOperationRequest) (*pb.CalculateOperationResponse, error) {
-	operationID := req.GetOperationId()
-	operationSymbol := req.GetOperationSymbol()
-	operandA := req.GetOperandA()
-	operandB := req.GetOperandB()
-
-	s.log.Info("WorkerServer: получен gRPC запрос CalculateOperation",
-		zap.String("operationID", operationID),
-		zap.String("symbol", operationSymbol),
-		zap.Float64("a", operandA),
-		zap.Float64("b", operandB),
+	// Логируем основные параметры запроса для отладки и мониторинга.
+	s.log.Debug("WorkerServer: получен запрос CalculateOperation",
+		zap.String("operationID", req.GetOperationId()),
+		zap.String("symbol", req.GetOperationSymbol()),
+		zap.Float64("operandA", req.GetOperandA()),
+		zap.Float64("operandB", req.GetOperandB()),
+		// TODO: Логировать req.GetArguments() когда они будут использоваться
 	)
 
-	if operationID == "" || operationSymbol == "" {
-		s.log.Warn("WorkerServer: невалидный запрос - пустой operation_id или operation_symbol", zap.String("opID", operationID), zap.String("opSymbol", operationSymbol))
-		return nil, status.Error(codes.InvalidArgument, "operation_id и operation_symbol не могут быть пустыми")
+	if req.GetOperationId() == "" || req.GetOperationSymbol() == "" {
+		s.log.Warn("WorkerServer: невалидный запрос - пустой ID или символ операции")
+		return nil, status.Error(codes.InvalidArgument, "operation_id и operation_symbol обязательны")
 	}
 
-	// Вызов сервиса вычислений
-	result, errService := s.calcService.Calculate(ctx, operationSymbol, operandA, operandB)
-	s.log.Debug("WorkerServer: результат от CalculatorService",
-		zap.String("operationID", operationID),
-		zap.Float64("serviceResult", result), // Если errService != nil, result должен быть 0
-		zap.Error(errService),               // errService должен быть ErrDivisionByZero
-	)
+	// Передаем управление сервисному слою для выполнения бизнес-логики.
+	result, serviceErr := s.calcService.Calculate(ctx, req.GetOperationSymbol(), req.GetOperandA(), req.GetOperandB() /*, req.GetArguments()... */)
+	// TODO: передать req.GetArguments() когда они будут использоваться в CalculatorService
 
-	response := &pb.CalculateOperationResponse{OperationId: operationID}
+	response := &pb.CalculateOperationResponse{OperationId: req.GetOperationId()}
 
-	if errService != nil { // Если CalculatorService ВЕРНУЛ ОШИБКУ
-		s.log.Warn("WorkerServer: CalculatorService вернул ошибку, формируем gRPC ошибку",
-			zap.String("operationID", operationID),
-			zap.String("symbol", operationSymbol),
-			zap.Error(errService),
+	if serviceErr != nil {
+		s.log.Warn("WorkerServer: сервис вычислений вернул ошибку",
+			zap.String("operationID", req.GetOperationId()),
+			zap.Error(serviceErr),
 		)
-		response.ErrorMessage = errService.Error() // Записываем текст ошибки в ответ
+		response.ErrorMessage = serviceErr.Error() // Записываем сообщение об ошибке для клиента
 
-		// Определяем gRPC код ошибки на основе типа ошибки от сервиса
-		if errors.Is(errService, service.ErrDivisionByZero) || errors.Is(errService, service.ErrUnknownOperator) {
+		// Маппим ошибки сервиса на gRPC статусы
+		if errors.Is(serviceErr, service.ErrDivisionByZero) ||
+			errors.Is(serviceErr, service.ErrUnknownOperator) /* || errors.Is(serviceErr, service.ErrInvalidArgumentsForFunc) */ {
+			// TODO: добавить обработку других специфичных ошибок, например, для функций
 			return response, status.Error(codes.InvalidArgument, response.ErrorMessage)
 		}
-		// Проверяем, не была ли операция отменена родительским контекстом (например, таймаут из Оркестратора)
-		if errors.Is(errService, context.Canceled) || errors.Is(errService, context.DeadlineExceeded) {
-			return response, status.Error(codes.DeadlineExceeded, response.ErrorMessage)
+		if errors.Is(serviceErr, context.Canceled) || errors.Is(serviceErr, context.DeadlineExceeded) {
+			return response, status.Error(codes.DeadlineExceeded, "операция отменена или превышен таймаут")
 		}
-		// Для всех остальных ошибок сервиса возвращаем Internal
-		return response, status.Error(codes.Internal, response.ErrorMessage)
+		// Для всех остальных (неожиданных) ошибок сервиса возвращаем Internal.
+		return response, status.Error(codes.Internal, "внутренняя ошибка сервера при вычислении")
 	}
 
-	// Если CalculatorService НЕ ВЕРНУЛ ОШИБКУ (errService == nil)
-	response.Result = result // Записываем результат
+	response.Result = result
 	s.log.Info("WorkerServer: операция успешно вычислена",
-		zap.String("operationID", operationID),
-		zap.String("symbol", operationSymbol),
+		zap.String("operationID", req.GetOperationId()),
 		zap.Float64("result", result),
 	)
-	return response, nil // Возвращаем успешный ответ
+	return response, nil
 }
