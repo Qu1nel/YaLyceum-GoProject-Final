@@ -24,16 +24,6 @@ agent
 orchestrator
 worker
 
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Frontend build artifacts (если бы они генерировались в корне)
-dist/
-build/
-
 # Документация и прочее
 README.md
 LICENSE

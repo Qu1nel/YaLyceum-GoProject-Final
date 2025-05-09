@@ -3,74 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Калькулятор Выражений</title>
-    <link rel="stylesheet" href="style.css"> 
+    <title>Распределённый Калькулятор</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
 </head>
-<body>
-    <div class="container">
-        <h1>Калькулятор Выражений</h1>
+<body data-theme="light"> 
 
-        <!-- Сообщения для пользователя -->
-        <div id="messages" class="hidden"></div>
+    <div class="page-wrapper">
+        
+        <header class="page-header">
+            <div class="logo">Калькулятор</div>
+            <button id="themeToggleButton" class="theme-toggle-button" aria-label="Переключить тему">
+                <svg id="themeIconMoon" xmlns="http://www.w3.org/2000/svg" class="theme-icon" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                   <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+                   <path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z"></path>
+                </svg>
+                <svg id="themeIconSun" xmlns="http://www.w3.org/2000/svg" class="theme-icon hidden" width="20" height="20" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                   <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+                   <path d="M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0 -8 0"></path>
+                   <path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7"></path>
+                </svg>
+            </button>
+        </header>
+        <main class="main-content">
+            <div class="container">
+                <h1>Распределённый Калькулятор</h1>
 
-        <!-- Формы Аутентификации (Регистрация и Вход) -->
-        <div id="authSection" class="auth-forms">
-            <div id="registerFormContainer">
-                <h2>Регистрация</h2>
-                <form id="registerForm">
-                    <div class="form-group">
-                        <label for="registerLogin">Логин:</label>
-                        <input type="text" id="registerLogin" name="registerLogin" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="registerPassword">Пароль:</label>
-                        <input type="password" id="registerPassword" name="registerPassword" required minlength="6">
-                    </div>
-                    <button type="submit">Зарегистрироваться</button>
-                </form>
-                <p>Уже есть аккаунт? <a href="#" id="showLoginLink">Войти</a></p>
-            </div>
+                <div id="messages" class="messages-container hidden"></div>
 
-            <div id="loginFormContainer" class="hidden">
-                <h2>Вход</h2>
-                <form id="loginForm">
-                    <div class="form-group">
-                        <label for="loginLogin">Логин:</label>
-                        <input type="text" id="loginLogin" name="loginLogin" required>
+                <div id="authSection" class="auth-forms">
+                    <div id="registerFormContainer">
+                        <h2>Регистрация</h2>
+                        <form id="registerForm">
+                            <div class="form-group">
+                                <label for="registerLogin">Логин</label>
+                                <input type="text" id="registerLogin" name="registerLogin" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="registerPassword">Пароль</label>
+                                <input type="password" id="registerPassword" name="registerPassword" required minlength="6">
+                            </div>
+                            <button type="submit" class="button-primary">Зарегистрироваться</button>
+                        </form>
+                        <p class="auth-switch">Уже есть аккаунт? <a href="#" id="showLoginLink">Войти</a></p>
                     </div>
-                    <div class="form-group">
-                        <label for="loginPassword">Пароль:</label>
-                        <input type="password" id="loginPassword" name="loginPassword" required>
-                    </div>
-                    <button type="submit">Войти</button>
-                </form>
-                <p>Нет аккаунта? <a href="#" id="showRegisterLink">Зарегистрироваться</a></p>
-            </div>
-        </div>
 
-        <!-- Секция Калькулятора (для аутентифицированных пользователей) -->
-        <div id="calculatorSection" class="calculator-section hidden">
-            <h2>Калькулятор</h2>
-            <p>Привет, <span id="currentUserLogin"></span>! <button id="logoutButton">Выход</button></p>
-            <form id="expressionForm">
-                <div class="form-group">
-                    <label for="expressionInput">Введите выражение:</label>
-                    <input type="text" id="expressionInput" name="expressionInput" placeholder="например, (2 + 2) * 2" required>
+                    <div id="loginFormContainer" class="hidden">
+                        <h2>Вход</h2>
+                        <form id="loginForm">
+                            <div class="form-group">
+                                <label for="loginLogin">Логин</label>
+                                <input type="text" id="loginLogin" name="loginLogin" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="loginPassword">Пароль</label>
+                                <input type="password" id="loginPassword" name="loginPassword" required>
+                            </div>
+                            <button type="submit" class="button-primary">Войти</button>
+                        </form>
+                        <p class="auth-switch">Нет аккаунта? <a href="#" id="showRegisterLink">Зарегистрироваться</a></p>
+                    </div>
                 </div>
-                <button type="submit">Вычислить</button>
-            </form>
 
-            <div class="tasks-section">
-                <h2>Ваши Задачи</h2>
-                <button id="refreshTasksButton">Обновить список задач</button>
-                <ul id="taskList">
-                    <!-- Задачи будут добавлены сюда через JS -->
-                </ul>
-                <div id="taskDetailsView" class="task-details-view hidden">
-                    <!-- Детали выбранной задачи -->
+                <div id="calculatorSection" class="calculator-section hidden">
+                    <div class="welcome-header">
+                        <h2>Калькулятор</h2>
+                        <div class="user-info">
+                            <span>Привет, <span id="currentUserLogin"></span>!</span>
+                            <button id="logoutButton" class="button-secondary">Выход</button>
+                        </div>
+                    </div>
+                    
+                    <form id="expressionForm">
+                        <div class="form-group">
+                            <label for="expressionInput">Введите выражение</label>
+                            <input type="text" id="expressionInput" name="expressionInput" placeholder="(2 + 2) * 2" required>
+                        </div>
+                        <button type="submit" class="button-primary">Вычислить</button>
+                    </form>
+
+                    <div class="tasks-section">
+                        <div class="tasks-header">
+                            <h2>Ваши Задачи</h2>
+                            <button id="refreshTasksButton" class="button-secondary">Обновить</button>
+                        </div>
+                        <ul id="taskList" class="task-list">
+                        </ul>
+                        <div id="taskDetailsView" class="task-details-view hidden">
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
+        </main>
+
+        <footer class="page-footer">
+            <div class="footer-content">
+                <p>©2025 Распределённый Калькулятор.</p>
+                <p>Автор: <a href="https://github.com/Qu1nel" target="_blank" rel="noopener noreferrer">Ivan Kovach (Qu1nel)</a></p>
+                <p>License: <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT License</a></p>
+                <div class="footer-contacts">
+                    <p>Связь:</p>
+                    <p><a href="mailto:covach.qn@gmail.com">covach.qn@gmail.com</a></p>
+                    <p><a href="https://t.me/qnllnq" target="_blank" rel="noopener noreferrer">Telegram: @qnllnq</a></p>
+                </div>
+            </div>
+        </footer>
     </div>
 
     <script src="app.js"></script>
