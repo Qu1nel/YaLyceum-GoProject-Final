@@ -3,10 +3,6 @@
   <h1>Распределённый Калькулятор Выражений Оркестратор-Воркер</h1>
 
   <p>Сервис для вычисления арифметических выражений с использованием распределенной архитектуры Оркестратор-Воркер, многопользовательским режимом, аутентификацией (JWT) и хранением данных в PostgreSQL.</p>
-
-  <h3><a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/blob/main/docs/index.md">Полное учебное руководство по проекту</a></h3>
-  <h2><a href="https://deepwiki.com/Qu1nel/YaLyceum-GoProject-Final">Интерактивная документация со встроенным ИИ ассистентом</a></h2>
-
 <p>
   <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/graphs/contributors">
     <img src="https://img.shields.io/github/contributors/Qu1nel/YaLyceum-GoProject-Final" alt="Участники" />
@@ -26,7 +22,7 @@
 </p>
 <p>
   <a href="https://go.dev/doc/install" >
-    <img src="https://img.shields.io/badge/Go-1.22%2B-blueviolet" alt="Версия Go" />
+    <img src="https://img.shields.io/badge/Go-1.24%2B-blueviolet" alt="Версия Go" />
   <a>
   <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/Qu1nel/YaLyceum-GoProject-Final?color=g" alt="Лицензия" />
@@ -41,6 +37,8 @@
   <span> · </span>
   <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/issues/">Предложить функционал</a>
 </h4>
+  <h3><a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/blob/main/docs/index.md">Полное учебное руководство по проекту</a></h3>
+  <h3><a href="https://deepwiki.com/Qu1nel/YaLyceum-GoProject-Final">Интерактивная документация со встроенным ИИ ассистентом</a></h3>
 </div>
 
 <br />
