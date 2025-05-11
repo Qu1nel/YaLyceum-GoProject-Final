@@ -40,6 +40,9 @@
   <span> · </span>
   <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/issues/">Предложить функционал</a>
 </h4>
+<h4>
+  <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/blob/main/docs/index.md">Полное учебное руководство по проекту</a>
+</h4>
 </div>
 
 <br />
@@ -74,7 +77,7 @@
 - [Связь](#связь)
 - [Лицензия](#лицензия)
 
-- [Подробная документация](./docs/index.md)
+- [Полное учебное руководство](./docs/index.md)
 
 ## О проекте
 
