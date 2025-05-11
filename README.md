@@ -4,7 +4,8 @@
 
   <p>Сервис для вычисления арифметических выражений с использованием распределенной архитектуры Оркестратор-Воркер, многопользовательским режимом, аутентификацией (JWT) и хранением данных в PostgreSQL.</p>
 
-  <h2><a href="https://deepwiki.com/Qu1nel/YaLyceum-GoProject-Final">Интерактивная документация с встроенным ИИ ассистентом</a></h2>
+  <h3><a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/blob/main/docs/index.md">Полное учебное руководство по проекту</a></h3>
+  <h2><a href="https://deepwiki.com/Qu1nel/YaLyceum-GoProject-Final">Интерактивная документация со встроенным ИИ ассистентом</a></h2>
 
 <p>
   <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/graphs/contributors">
@@ -39,9 +40,6 @@
   <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/issues/">Сообщить о баге</a>
   <span> · </span>
   <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/issues/">Предложить функционал</a>
-</h4>
-<h4>
-  <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/blob/main/docs/index.md">Полное учебное руководство по проекту</a>
 </h4>
 </div>
 
