@@ -4,7 +4,7 @@
 
   <p>Сервис для вычисления арифметических выражений с использованием распределенной архитектуры Оркестратор-Воркер, многопользовательским режимом, аутентификацией (JWT) и хранением данных в PostgreSQL.</p>
 
-  <a href="https://deepwiki.com/Qu1nel/YaLyceum-GoProject-Final">Интерактивная документация с встроенным ИИ ассистентом</a>
+  <h2><a href="https://deepwiki.com/Qu1nel/YaLyceum-GoProject-Final">Интерактивная документация с встроенным ИИ ассистентом</a></h2>
 
 <p>
   <a href="https://github.com/Qu1nel/YaLyceum-GoProject-Final/graphs/contributors">
